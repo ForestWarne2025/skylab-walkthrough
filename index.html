@@ -185,14 +185,26 @@ const gate=$('gate'), beat=$('beat'), beatWho=$('beatWho'), beatText=$('beatText
       hint=$('hint'), dock=$('dock'), vid=$('dockVid'), endcard=$('endcard'),
       donotcard=$('donotcard'), alarm=$('alarm');
 
+/* real canon voices (Narrator = Gemini Despina, Lockwood = Gemini Leda), pre-rendered WAVs */
+const VO = {};
+for (const n of ['narrator_burst','lockwood_airlock','narrator_docked','lockwood_button']){
+  VO[n] = new Audio(n + '.wav'); VO[n].preload = 'auto';
+}
+let nowPlaying = null;
+function say(name){
+  if (nowPlaying){ nowPlaying.pause(); nowPlaying.currentTime = 0; }
+  nowPlaying = VO[name] || null;
+  if (nowPlaying) nowPlaying.play().catch(()=>{});
+}
+
 const COCKPIT_BEATS = [
-  { who:'◈ HALY — PRODUCER / NARRATOR ◈',
+  { who:'◈ THE NARRATOR ◈', vo:'narrator_burst',
     text:'That sound was not static, Agent. It was an <b>NFHC data burst</b> — machine-readable truth, packed for transit. Your manifest calls it <b>the Ground Truth packet</b>. It rides with you.' },
-  { who:'◈ M. LOCKWOOD — OPERATIONS · ON CRT ◈',
+  { who:'◈ M. LOCKWOOD — OPERATIONS · ON CRT ◈', vo:'lockwood_airlock',
     text:'Agent — Lockwood, Operations desk. That packet needs to reach the <b>studio floor</b> before the on-air light. The One-Voice Mainframe is scrubbing feeds while we talk. <b>Tap the AIRLOCK</b> and get inside.' },
 ];
 const HALLWAY_BEAT =
-  { who:'◈ HALY — PRODUCER / NARRATOR ◈',
+  { who:'◈ THE NARRATOR ◈', vo:'narrator_docked',
     text:'Docking confirmed. You are aboard <b>Skylab 2</b>. The ON AIR light is live — the broadcast is happening <b>now</b>. Studio is to your left, Agent. The packet does not deliver itself.' };
 
 let beatIdx=-1, phase='gate';
@@ -207,6 +219,7 @@ function nextCockpitBeat(){
   beatIdx++;
   if (beatIdx < COCKPIT_BEATS.length){
     beatWho.innerHTML=COCKPIT_BEATS[beatIdx].who; beatText.innerHTML=COCKPIT_BEATS[beatIdx].text;
+    say(COCKPIT_BEATS[beatIdx].vo);
     beat.style.display='block'; phase='beat';
   } else {
     beat.style.display='none'; phase='airlock'; showTags(['airlock','button']);
@@ -219,6 +232,7 @@ TAGS.button.el.addEventListener('click', () => {
   alarm.style.display='block';
   setTimeout(()=>alarm.style.display='none', 1800);
   donotcard.style.display='block';
+  say('lockwood_button');
 });
 donotcard.addEventListener('click', ()=> donotcard.style.display='none');
 
@@ -234,6 +248,7 @@ TAGS.airlock.el.addEventListener('click', async () => {
   tYaw=0; tPitch=0; yaw=0; pitch=0;
   phase='hallway';
   beatWho.innerHTML=HALLWAY_BEAT.who; beatText.innerHTML=HALLWAY_BEAT.text;
+  say(HALLWAY_BEAT.vo);
   beat.style.display='block';
   showTags(['studio','equip']);
 });
@@ -241,7 +256,7 @@ TAGS.airlock.el.addEventListener('click', async () => {
 /* hallway doors */
 TAGS.studio.el.addEventListener('click', () => { showTags([]); beat.style.display='none'; endcard.style.display='block'; phase='end'; });
 TAGS.equip.el.addEventListener('click', () => {
-  beatWho.innerHTML='◈ HALY — PRODUCER / NARRATOR ◈';
+  beatWho.innerHTML='◈ THE NARRATOR ◈';
   beatText.innerHTML='The Equipment Room. NFHC encoders, fresh shipment. Worth a look <b>after</b> the packet is delivered — the mission comes first, Agent. (It opens in the next build.)';
   beat.style.display='block';
 });
