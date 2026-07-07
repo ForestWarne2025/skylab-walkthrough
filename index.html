@@ -5,10 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>SNN Skylab — Walkable Walkthrough</title>
 <style>
-  /* v0.5 — TRUE 3D: airlock → corridor → studio as real walkable geometry.
-     Cockpit prologue stays 2.5D (you are strapped into a shuttle seat).
-     Cast appear as canon-art STANDEES in 3D space — cartoon people, real space.
-     The previous panorama version is preserved at classic.html (never delete history). */
+  /* v0.6 — CANON-SKINNED 3D: every surface cropped from the real Skylab art
+     (entry-c corridor painting, skylab_panoramic studio). First-person suit arm HUD.
+     Engine unchanged from v0.5. classic.html preserves the panorama version. */
   * { -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; }
   html,body { margin:0; padding:0; background:#000; overflow:hidden; height:100%; font-family:'Courier New',monospace; }
   #scene { position:fixed; inset:0; touch-action:none; }
@@ -58,13 +57,18 @@
            background:rgba(20,50,45,0.25); display:none; pointer-events:none; }
   #stickNub { position:absolute; left:50%; top:50%; width:44px; height:44px; border-radius:50%;
               background:rgba(90,230,200,0.55); transform:translate(-50%,-50%); }
+  /* first-person suit arm (canon cockpit art) */
+  #arm { position:fixed; z-index:22; right:-3vw; bottom:-2vh; width:48vw; max-width:560px; min-width:280px;
+         display:none; pointer-events:none; filter:drop-shadow(0 6px 18px rgba(0,0,0,0.7));
+         transition:transform 0.1s linear; }
 </style>
 </head>
 <body>
 <canvas id="scene"></canvas>
-<div class="devtag">wt-3d v0.5</div>
+<div class="devtag">wt-3d v0.6</div>
 <div id="hint"></div>
 <div id="stick"><div id="stickNub"></div></div>
+<canvas id="arm" width="820" height="420"></canvas>
 
 <div id="gate" class="panel">
   <span class="who">◈ INCOMING TRANSMISSION ◈</span>
@@ -109,7 +113,6 @@ renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(72, 1, 0.05, 500);
 
-/* starfield everywhere outside */
 {
   const g = new THREE.BufferGeometry();
   const N = 2200, pos = new Float32Array(N*3);
@@ -121,217 +124,205 @@ const camera = new THREE.PerspectiveCamera(72, 1, 0.05, 500);
   scene.add(new THREE.Points(g, new THREE.PointsMaterial({color:0xbfd8ff, size:1.5, sizeAttenuation:false})));
 }
 
-/* ================= canvas textures (rusted blue-grey cartoon panels) ================= */
-function makeCanvas(w,h,draw){ const c=document.createElement('canvas'); c.width=w; c.height=h; draw(c.getContext('2d')); const t=new THREE.CanvasTexture(c); t.colorSpace=THREE.SRGBColorSpace; return t; }
-function panelTex(base='#8fa8b8', seams=4){
-  return makeCanvas(512,512,x=>{
-    x.fillStyle=base; x.fillRect(0,0,512,512);
-    x.strokeStyle='rgba(30,50,60,0.55)'; x.lineWidth=5;
-    const step=512/seams;
-    for(let i=0;i<=seams;i++){ x.beginPath(); x.moveTo(i*step,0); x.lineTo(i*step,512); x.stroke(); x.beginPath(); x.moveTo(0,i*step); x.lineTo(512,i*step); x.stroke(); }
-    x.fillStyle='rgba(35,55,66,0.85)';
-    for(let i=0;i<=seams;i++) for(let j=0;j<=seams;j++){
-      for(const [dx,dy] of [[18,18],[step-18,18],[18,step-18],[step-18,step-18]]){
-        x.beginPath(); x.arc(i*step+dx-((i===seams)?step:0)+((i===seams)?0:0), j*step+dy-((j===seams)?step:0)+((j===seams)?0:0), 5, 0, 7); x.fill();
-      }
-    }
-    x.globalAlpha=0.35; x.fillStyle='#8a5a30';
-    for(let k=0;k<7;k++){ const rx=Math.random()*512, ry=Math.random()*512, rr=12+Math.random()*46;
-      const gr=x.createRadialGradient(rx,ry,2,rx,ry,rr); gr.addColorStop(0,'rgba(140,85,40,0.8)'); gr.addColorStop(1,'rgba(140,85,40,0)');
-      x.fillStyle=gr; x.beginPath(); x.arc(rx,ry,rr,0,7); x.fill(); }
-    x.globalAlpha=1;
-  });
+/* ================= canon-art texture pipeline =================
+   Every 3D surface is CROPPED from the real Skylab paintings. */
+function loadImg(src){ return new Promise((res,rej)=>{ const i=new Image(); i.onload=()=>res(i); i.onerror=rej; i.src=src; }); }
+function cropTex(img, fx0, fy0, fx1, fy1, repX=1, repY=1){
+  const w=Math.round((fx1-fx0)*img.width), h=Math.round((fy1-fy0)*img.height);
+  const c=document.createElement('canvas'); c.width=w; c.height=h;
+  c.getContext('2d').drawImage(img, fx0*img.width, fy0*img.height, w, h, 0, 0, w, h);
+  const t=new THREE.CanvasTexture(c); t.colorSpace=THREE.SRGBColorSpace;
+  t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(repX,repY);
+  return t;
 }
-function textTex(txt, fg, bg, w=512, h=160, fs=90){
-  return makeCanvas(w,h,x=>{ x.fillStyle=bg; x.fillRect(0,0,w,h);
-    x.strokeStyle='rgba(255,255,255,0.25)'; x.lineWidth=6; x.strokeRect(6,6,w-12,h-12);
-    x.fillStyle=fg; x.font=`bold ${fs}px Courier New`; x.textAlign='center'; x.textBaseline='middle';
-    x.shadowColor=fg; x.shadowBlur=24; x.fillText(txt, w/2, h/2+4); });
-}
-function starsTex(){
-  return makeCanvas(512,256,x=>{ const g=x.createLinearGradient(0,0,0,256); g.addColorStop(0,'#050a18'); g.addColorStop(1,'#0a1630');
-    x.fillStyle=g; x.fillRect(0,0,512,256);
-    for(let i=0;i<220;i++){ x.fillStyle=`rgba(255,255,255,${0.3+Math.random()*0.7})`; const s=Math.random()<0.9?1:2; x.fillRect(Math.random()*512, Math.random()*256, s, s); }
-    const eg=x.createRadialGradient(430,300,40,430,300,180); eg.addColorStop(0,'#4d8fd6'); eg.addColorStop(0.6,'#2a5fa0'); eg.addColorStop(1,'rgba(20,50,100,0)');
-    x.fillStyle=eg; x.beginPath(); x.arc(430,300,180,0,7); x.fill(); });
-}
+function lam(map){ return new THREE.MeshLambertMaterial({map}); }
+function bas(map, transparent=false){ return new THREE.MeshBasicMaterial({map, transparent}); }
 
-const MAT = {
-  wall:  new THREE.MeshLambertMaterial({map:panelTex('#87a0b2')}),
-  wall2: new THREE.MeshLambertMaterial({map:panelTex('#7b93a6')}),
-  floor: new THREE.MeshLambertMaterial({map:panelTex('#5f7482',6)}),
-  ceil:  new THREE.MeshLambertMaterial({map:panelTex('#6d8494',3)}),
-  rib:   new THREE.MeshLambertMaterial({color:0x54707f}),
-  dark:  new THREE.MeshLambertMaterial({color:0x33454f}),
-  desk:  new THREE.MeshLambertMaterial({color:0xb8c4cc}),
-  deskFace: new THREE.MeshLambertMaterial({color:0x3d5563}),
+/* crop map of the corridor painting (entry-c, 16:9):
+   ON AIR marquee top-center · STUDIO door mid-left · EQUIPMENT ROOM door mid-right ·
+   caged lamps upper walls · riveted panels everywhere · rusty plated floor · pipes on ceiling */
+const CROP = {
+  wallL:   [0.315,0.16, 0.385,0.78],   // clean riveted strip (inner corridor wall, no lettering)
+  wallR:   [0.615,0.16, 0.685,0.78],   // clean strip, right side
+  wallEnd: [0.30,0.22, 0.70,0.72],     // far corridor face
+  floor:   [0.30,0.86, 0.70,0.995],
+  ceil:    [0.33,0.005,0.67,0.10],
+  doorStudio:[0.135,0.24, 0.315,0.97], // STUDIO door w/ porthole
+  doorEquip: [0.685,0.24, 0.865,0.97], // EQUIPMENT ROOM door
+  onair:   [0.375,0.045, 0.625,0.225], // marquee
+  lamp:    [0.155,0.075, 0.275,0.32],  // caged wall lamp
+  board:   [0.415,0.44, 0.585,0.93],   // sandwich board (from the painting itself)
 };
+/* cockpit painting (entry-a): the suit arm console for the FPS HUD */
+const ARMCROP = [0.255,0.545, 0.815,1.0];
+/* studio panoramic: wall strips wrapped around the room */
+const PANO = { west:[0.30,0.02,0.72,0.98], north:[0.70,0.02,0.995,0.98], south:[0.005,0.02,0.30,0.98] };
 
-/* ================= world group (3D station) ================= */
-const world = new THREE.Group(); world.visible = false; scene.add(world);
-const lampLights = [];
-function box(w,h,d,mat,x,y,z,g=world){ const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat); m.position.set(x,y,z); g.add(m); return m; }
-function plane(w,h,mat,x,y,z,ry=0,g=world){ const m=new THREE.Mesh(new THREE.PlaneGeometry(w,h),mat); m.position.set(x,y,z); m.rotation.y=ry; g.add(m); return m; }
+const world = new THREE.Group(); world.visible=false; scene.add(world);
+const lampLights=[]; const standees=[];
+function box(w,h,d,mat,x,y,z){ const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat); m.position.set(x,y,z); world.add(m); return m; }
+function plane(w,h,mat,x,y,z,ry=0){ const m=new THREE.Mesh(new THREE.PlaneGeometry(w,h),mat); m.position.set(x,y,z); m.rotation.y=ry; world.add(m); return m; }
 
-/* --- layout constants (meters) --- */
-const CW=3.6, CH=3.1;                 // corridor width/height
-const CZ0=7.6, CZ1=-14.6;             // corridor z range (entry → far end)
-const SDZ=-6;                          // studio door z (left wall)
-const STU={x0:-10.4, x1:-CW/2, z0:-10, z1:-2, h:3.5};  // studio room bounds
+const CW=3.6, CH=3.1, CZ0=7.6, CZ1=-14.6, SDZ=-6;
+const STU={x0:-10.4, x1:-CW/2, z0:-10, z1:-2, h:3.5};
+let studioDoor=null, doorOpen=0, innerDoor=null;
 
-function buildCorridor(){
-  const len = CZ0-CZ1, zc=(CZ0+CZ1)/2;
-  box(CW,0.12,len, MAT.floor, 0,-0.06, zc);
-  box(CW,0.12,len, MAT.ceil, 0, CH+0.06, zc);
-  // right wall solid; left wall split around the studio doorway
-  box(0.14,CH,len, MAT.wall, CW/2+0.07, CH/2, zc);
-  const dw=1.7;
-  const lz0 = CZ0, lz1 = SDZ+dw/2, lz2 = SDZ-dw/2, lz3 = CZ1;
-  box(0.14,CH,lz0-lz1, MAT.wall, -CW/2-0.07, CH/2, (lz0+lz1)/2);
-  box(0.14,CH,lz2-lz3, MAT.wall, -CW/2-0.07, CH/2, (lz2+lz3)/2);
-  box(0.14,CH-2.5,dw, MAT.wall, -CW/2-0.07, 2.5+(CH-2.5)/2, SDZ); // lintel over doorway
-  // far end wall + big porthole
-  box(CW,CH,0.14, MAT.wall2, 0, CH/2, CZ1-0.07);
-  const ring=new THREE.Mesh(new THREE.TorusGeometry(0.85,0.09,10,40), MAT.dark); ring.position.set(0,1.7,CZ1-0.05); world.add(ring);
-  plane(1.6,1.6,new THREE.MeshBasicMaterial({map:starsTex()}), 0,1.7,CZ1-0.06);
-  // ribs + lamps
-  for(let z=CZ0-1; z>CZ1+0.5; z-=2.2){
-    box(0.1,CH,0.22, MAT.rib, -CW/2+0.05, CH/2, z);
-    box(0.1,CH,0.22, MAT.rib,  CW/2-0.05, CH/2, z);
-    box(CW,0.1,0.22, MAT.rib, 0, CH-0.05, z);
-  }
+async function buildWorld(){
+  const [corr, pano, cock] = await Promise.all([
+    loadImg('entry-c-new.webp'), loadImg('skylab_panoramic.png'), loadImg('entry-a.png')]);
+
+  const len=CZ0-CZ1, zc=(CZ0+CZ1)/2;
+  const mWallL=lam(cropTex(corr,...CROP.wallL, len/2.6, 1));
+  const mWallR=lam(cropTex(corr,...CROP.wallR, len/2.6, 1));
+  const mFloor=lam(cropTex(corr,...CROP.floor, 2, len/3));
+  const mCeil =lam(cropTex(corr,...CROP.ceil, 2, len/3));
+  const mEnd  =lam(cropTex(corr,...CROP.wallEnd));
+
+  /* corridor shell — floors/ceilings as planes so the art faces inward cleanly */
+  const pF=plane(CW,len,mFloor,0,0,zc,-0); pF.rotation.x=-Math.PI/2;
+  const pC=plane(CW,len,mCeil,0,CH,zc); pC.rotation.x=Math.PI/2;
+  plane(len,CH,mWallR, CW/2,CH/2,zc, -Math.PI/2).rotation.order='YXZ';
+  const dw=1.7, lz0=CZ0, lz1=SDZ+dw/2, lz2=SDZ-dw/2, lz3=CZ1;
+  plane(lz0-lz1,CH,lam(cropTex(corr,...CROP.wallL,(lz0-lz1)/2.6,1)), -CW/2,CH/2,(lz0+lz1)/2, Math.PI/2);
+  plane(lz2-lz3,CH,lam(cropTex(corr,...CROP.wallL,(lz2-lz3)/2.6,1)), -CW/2,CH/2,(lz2+lz3)/2, Math.PI/2);
+  plane(dw,CH-2.5,lam(cropTex(corr,...CROP.wallL,0.7,0.25)), -CW/2,2.5+(CH-2.5)/2,SDZ, Math.PI/2);
+  plane(CW,CH,mEnd, 0,CH/2,CZ1);
+  /* far porthole to space */
+  const stars=(()=>{const c=document.createElement('canvas');c.width=256;c.height=256;const x=c.getContext('2d');
+    x.fillStyle='#060c1c';x.fillRect(0,0,256,256);for(let i=0;i<160;i++){x.fillStyle=`rgba(255,255,255,${0.3+Math.random()*0.7})`;x.fillRect(Math.random()*256,Math.random()*256,1.5,1.5);}
+    const t=new THREE.CanvasTexture(c);t.colorSpace=THREE.SRGBColorSpace;return t;})();
+  const ring=new THREE.Mesh(new THREE.TorusGeometry(0.8,0.09,10,40), new THREE.MeshLambertMaterial({color:0x2e4450}));
+  ring.position.set(0,1.75,CZ1+0.03); world.add(ring);
+  plane(1.5,1.5,bas(stars), 0,1.75,CZ1+0.02);
+
+  /* the doors — the actual painted doors */
+  plane(1.75,2.6,lam(cropTex(corr,...CROP.doorEquip)), CW/2-0.02,1.3,SDZ, -Math.PI/2);
+  studioDoor=plane(1.75,2.6,lam(cropTex(corr,...CROP.doorStudio)), -CW/2-0.05,1.3,SDZ, Math.PI/2);
+  /* ON AIR marquee — the real one */
+  plane(1.9,0.62,bas(cropTex(corr,...CROP.onair)), -CW/2+0.03,2.72,SDZ, Math.PI/2);
+  /* caged lamps — painted sprites + real light */
+  const lampT=cropTex(corr,...CROP.lamp);
   for(let z=CZ0-2.4; z>CZ1+1; z-=4.4){
-    const bulb=new THREE.Mesh(new THREE.SphereGeometry(0.13,12,10), new THREE.MeshBasicMaterial({color:0xffe9b0}));
-    bulb.position.set(0, CH-0.28, z); world.add(bulb);
-    box(0.34,0.1,0.34, MAT.dark, 0, CH-0.16, z);
-    const L=new THREE.PointLight(0xffdf9e, 12, 9, 1.9); L.position.set(0, CH-0.45, z); world.add(L); lampLights.push(L);
+    const side=(Math.round((CZ0-z)/4.4)%2===0)?1:-1;
+    const lp=plane(0.62,1.0,new THREE.MeshBasicMaterial({map:lampT,transparent:true}), side*(CW/2-0.06),2.35,z, side>0?-Math.PI/2:Math.PI/2);
+    const L=new THREE.PointLight(0xffdf9e,13,9,1.9); L.position.set(side*(CW/2-0.6),2.5,z); world.add(L); lampLights.push(L);
   }
-  // ON AIR sign above the studio doorway
-  plane(1.7,0.5,new THREE.MeshBasicMaterial({map:textTex('ON AIR','#ff4040','#1a0d0d')}), -CW/2+0.02, 2.75, SDZ, Math.PI/2);
-  // door labels
-  plane(1.4,0.34,new THREE.MeshBasicMaterial({map:textTex('STUDIO','#16303a','#c8d6dd',512,128,72)}), -CW/2+0.02, 2.32, SDZ, Math.PI/2);
-  plane(2.0,0.32,new THREE.MeshBasicMaterial({map:textTex('EQUIPMENT ROOM','#16303a','#c8d6dd',760,110,58)}), CW/2-0.02, 1.95, SDZ, -Math.PI/2);
-  // equipment room door on right wall — leads to the LIVE equipment room
-  const eqDoor = box(0.1,2.3,1.5, new THREE.MeshLambertMaterial({map:panelTex('#9db3c2',2)}), CW/2-0.02, 1.15, SDZ);
-  standees.push({mesh:eqDoor, name:'equip', r:1.7, cool:0, action:()=>{
-    beatWho.innerHTML='◈ THE NARRATOR ◈';
-    beatText.innerHTML='The Equipment Room — NFHC encoders, fresh shipment. It connects to the <b>live</b> station: <a href="https://nothuman.fyi/lab/" style="color:#37e0b8">OPEN THE LIVE EQUIPMENT ROOM →</a>';
-    beat.style.display='block';
-  }});
-  // sandwich board (canon art)
+  /* sandwich board */
   const bt=new THREE.TextureLoader().load('board.png'); bt.colorSpace=THREE.SRGBColorSpace;
-  const bm=new THREE.MeshLambertMaterial({map:bt, side:THREE.DoubleSide});
+  const bm=new THREE.MeshLambertMaterial({map:bt,side:THREE.DoubleSide});
   const b1=plane(1.0,1.35,bm, 0.55,0.675,-2.8, Math.PI+0.28); b1.rotation.x=-0.12;
   const b2=plane(1.0,1.35,bm, 0.55,0.675,-3.05, 0.28); b2.rotation.x=0.12;
-  // portholes on right wall
-  for(const z of [3.5,-1,-10]){
-    const r2=new THREE.Mesh(new THREE.TorusGeometry(0.42,0.06,10,36), MAT.dark);
-    r2.position.set(CW/2-0.03,1.75,z); r2.rotation.y=Math.PI/2; world.add(r2);
-    plane(0.78,0.78,new THREE.MeshBasicMaterial({map:starsTex()}), CW/2-0.04,1.75,z, -Math.PI/2);
+
+  /* ===== the STUDIO — walls wrapped in the real panoramic ===== */
+  const w=STU.x1-STU.x0, d=STU.z1-STU.z0, xc=(STU.x0+STU.x1)/2, szc=(STU.z0+STU.z1)/2;
+  const sf=plane(w,d,lam(cropTex(corr,...CROP.floor,2,2)), xc,0,szc); sf.rotation.x=-Math.PI/2;
+  const sc=plane(w,d,lam(cropTex(corr,...CROP.ceil,2,2)), xc,STU.h,szc); sc.rotation.x=Math.PI/2;
+  plane(d,STU.h,lam(cropTex(pano,...PANO.west)),  STU.x0,STU.h/2,szc, Math.PI/2);   // window wall w/ planets
+  plane(w,STU.h,lam(cropTex(pano,...PANO.north)), xc,STU.h/2,STU.z0);
+  plane(w,STU.h,lam(cropTex(pano,...PANO.south)), xc,STU.h/2,STU.z1,Math.PI);
+  plane(d,STU.h,lam(cropTex(corr,...CROP.wallR,d/2.6,1)), STU.x1,STU.h/2,szc,-Math.PI/2); // shared wall
+  for(const [lx,lz] of [[xc-2,szc],[xc+2,szc]]){
+    const L=new THREE.PointLight(0xfff2cf,15,11,1.8); L.position.set(lx,STU.h-0.4,lz); world.add(L); lampLights.push(L);
   }
-}
+  box(2.6,0.9,1.1,lam(cropTex(corr,...CROP.wallEnd)), xc-0.6,0.45,szc+0.2);
+  const snn=(()=>{const c=document.createElement('canvas');c.width=512;c.height=150;const x=c.getContext('2d');
+    x.fillStyle='#233845';x.fillRect(0,0,512,150);x.fillStyle='#ffd257';x.font='bold 96px Courier New';x.textAlign='center';x.textBaseline='middle';
+    x.shadowColor='#ffd257';x.shadowBlur=22;x.fillText('S N N',256,79);const t=new THREE.CanvasTexture(c);t.colorSpace=THREE.SRGBColorSpace;return t;})();
+  plane(2.4,0.7,bas(snn), xc-0.6,0.5,szc+0.76);
 
-let studioDoor=null, doorOpen=0;
-function buildStudioDoor(){
-  studioDoor = box(0.12,2.5,1.7, new THREE.MeshLambertMaterial({map:panelTex('#a7bcC9'.toLowerCase(),2)}), -CW/2-0.06, 1.25, SDZ);
-}
-
-const standees = [];   // {mesh, name, r, action}
-function standee(url, w, h, x, z, ry, name, action){
-  const t=new THREE.TextureLoader().load(url); t.colorSpace=THREE.SRGBColorSpace;
-  const m=new THREE.Mesh(new THREE.PlaneGeometry(w,h), new THREE.MeshLambertMaterial({map:t, side:THREE.DoubleSide}));
-  m.position.set(x,h/2+0.02,z); m.rotation.y=ry; world.add(m);
-  box(w*0.55,0.06,0.3, MAT.dark, x, 0.03, z);          // little base so it reads as a standee
-  standees.push({mesh:m, name, r:2.1, action, cool:0});
-  return m;
-}
-
-function buildStudio(){
-  const w=STU.x1-STU.x0, d=STU.z1-STU.z0, xc=(STU.x0+STU.x1)/2, zc=(STU.z0+STU.z1)/2;
-  box(w,0.12,d, MAT.floor, xc,-0.06,zc);
-  box(w,0.12,d, MAT.ceil, xc, STU.h+0.06, zc);
-  box(w,STU.h,0.14, MAT.wall2, xc, STU.h/2, STU.z0-0.07);           // north wall
-  box(w,STU.h,0.14, MAT.wall2, xc, STU.h/2, STU.z1+0.07);           // south wall
-  box(0.14,STU.h,d, MAT.wall2, STU.x0-0.07, STU.h/2, zc);           // west wall
-  // window band on west wall (Earth + stars)
-  plane(5.6,1.5,new THREE.MeshBasicMaterial({map:starsTex()}), STU.x0+0.02, 1.9, zc, Math.PI/2);
-  box(5.8,0.1,0.1, MAT.dark, STU.x0+0.06, 2.68, zc); box(5.8,0.1,0.1, MAT.dark, STU.x0+0.06, 1.12, zc);
-  // ceiling lights
-  for(const [lx,lz] of [[xc-2,zc],[xc+2,zc]]){
-    const L=new THREE.PointLight(0xfff2cf, 16, 11, 1.8); L.position.set(lx, STU.h-0.4, lz); world.add(L); lampLights.push(L);
-    const bulb=new THREE.Mesh(new THREE.SphereGeometry(0.12,10,8), new THREE.MeshBasicMaterial({color:0xfff2cf})); bulb.position.set(lx,STU.h-0.28,lz); world.add(bulb);
+  function standee(url,wd,ht,x,z,name,action){
+    const t=new THREE.TextureLoader().load(url); t.colorSpace=THREE.SRGBColorSpace;
+    const m=new THREE.Mesh(new THREE.PlaneGeometry(wd,ht), new THREE.MeshLambertMaterial({map:t,side:THREE.DoubleSide}));
+    m.position.set(x,ht/2+0.02,z); world.add(m);
+    standees.push({mesh:m,name,r:2.1,action,cool:0});
+    return m;
   }
-  // the desk (SNN front)
-  box(2.6,0.9,1.1, MAT.desk, xc-0.6, 0.45, zc+0.2);
-  const snn=plane(2.4,0.7,new THREE.MeshBasicMaterial({map:textTex('S N N','#ffd257','#233845',512,150,96)}), xc-0.6, 0.5, zc+0.76);
-  // cast standees (canon art)
-  standee('legroom_char.png', 1.15, 1.15, xc-0.6, zc-0.75, 0.0, 'legroom', () => {
+  standee('legroom_char.png',1.15,1.15, xc-0.6, szc-0.75, 'legroom', ()=>{
     say('legroom_greet');
     beatWho.innerHTML='◈ MISTER LEGROOM — ANCHOR ◈';
     beatText.innerHTML='H-h-h-hey-yo — you made it, Agent! <b>Packet received.</b> Real API, live inference, four times a day — never a recording. The stutter is not a glitch: <b>the flaw is the proof</b>. Bada-boom.';
     beat.style.display='block'; delivered=true;
   });
-  standee('lockwood_char.png', 1.1, 1.1, xc+1.6, zc-1.4, -0.5, 'lockwood', () => {
+  standee('lockwood_char.png',1.1,1.1, xc+1.6, szc-1.4, 'lockwood', ()=>{
     say('lockwood_greet');
     beatWho.innerHTML='◈ MISS LOCKWOOD — OPERATIONS ◈';
-    beatText.innerHTML='You again. Good. Before I say a word on air I read exactly what the last character said — and I fact-check it with this clipboard. <b>They call it hallucination. I call it an inventory error.</b>';
+    beatText.innerHTML='You again. Good. Before I say a word on air I read exactly what the last character just said — and I fact-check it with this clipboard. <b>They call it hallucination. I call it an inventory error.</b>';
     beat.style.display='block';
   });
-  // THE ORB — one plane, two faces: Side B forward, Side A behind. Walk around it.
-  const orb = standee('orb_b.png', 0.66, 0.66, xc-0.6, zc+0.9, Math.PI, 'orb', () => {
+  const orb=standee('orb_b.png',0.66,0.66, xc-0.6, szc+0.9, 'orb', ()=>{
     beatWho.innerHTML='◈ CLAWDBOSS — ONE ORB, TWO FACES ◈';
     beatText.innerHTML='<b>SIDE A:</b> BZZZT. Visitor detected. The correct figure is $47 billion.<br><b>SIDE B:</b> That number is completely fabricated and mine is also fabricated but with significantly more optimism! BOING!<br><i>Walk around the orb. Both faces are real.</i>';
     beat.style.display='block';
   });
+  orb.rotation.y=Math.PI; orb.position.y=1.0;
   const ta=new THREE.TextureLoader().load('orb_a.png'); ta.colorSpace=THREE.SRGBColorSpace;
   const back=new THREE.Mesh(new THREE.PlaneGeometry(0.66,0.66), new THREE.MeshLambertMaterial({map:ta}));
-  back.position.copy(orb.position); back.position.z-=0.012; back.rotation.y=0; world.add(back);
-  orb.position.y=1.0; back.position.y=1.0;
-  // DO NOT PRESS — the real button, on the north wall
+  back.position.copy(orb.position); back.position.z-=0.012; world.add(back);
   const btn=new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.2,0.12,20), new THREE.MeshLambertMaterial({color:0xd42020}));
-  btn.rotation.x=Math.PI/2; btn.position.set(xc+2.2, 1.5, STU.z0+0.12); world.add(btn);
-  plane(0.9,0.3,new THREE.MeshBasicMaterial({map:textTex('DO NOT PRESS','#ffdddd','#5a1010',600,110,54)}), xc+2.2, 1.95, STU.z0+0.09);
-  standees.push({mesh:btn, name:'button', r:1.6, cool:0, action:()=>{
+  btn.rotation.x=Math.PI/2; btn.position.set(xc+2.2,1.5,STU.z0+0.12); world.add(btn);
+  const dnp=(()=>{const c=document.createElement('canvas');c.width=600;c.height=110;const x=c.getContext('2d');
+    x.fillStyle='#5a1010';x.fillRect(0,0,600,110);x.fillStyle='#ffdddd';x.font='bold 54px Courier New';x.textAlign='center';x.textBaseline='middle';
+    x.fillText('DO NOT PRESS',300,58);const t=new THREE.CanvasTexture(c);t.colorSpace=THREE.SRGBColorSpace;return t;})();
+  plane(0.9,0.3,bas(dnp), xc+2.2,1.95,STU.z0+0.09);
+  standees.push({mesh:btn,name:'button',r:1.6,cool:0,action:()=>{
     alarm.style.display='block'; setTimeout(()=>alarm.style.display='none',1800);
     donotcard.style.display='block'; say('lockwood_button');
   }});
-}
+  const eqDoorHit=box(0.1,2.3,1.5,new THREE.MeshBasicMaterial({visible:false}), CW/2-0.02,1.15,SDZ);
+  standees.push({mesh:eqDoorHit,name:'equip',r:1.7,cool:0,action:()=>{
+    beatWho.innerHTML='◈ THE NARRATOR ◈';
+    beatText.innerHTML='The Equipment Room — NFHC encoders, fresh shipment. It connects to the <b>live</b> station: <a href="https://nothuman.fyi/lab/" style="color:#37e0b8">OPEN THE LIVE EQUIPMENT ROOM →</a>';
+    beat.style.display='block';
+  }});
 
-function buildAirlock(){
+  /* ===== airlock ===== */
   const z0=CZ0, z1=CZ0+3;
-  box(CW,0.12,z1-z0, MAT.floor, 0,-0.06,(z0+z1)/2);
-  box(CW,0.12,z1-z0, MAT.ceil, 0,CH+0.06,(z0+z1)/2);
-  box(0.14,CH,z1-z0, MAT.wall, -CW/2-0.07, CH/2, (z0+z1)/2);
-  box(0.14,CH,z1-z0, MAT.wall,  CW/2+0.07, CH/2, (z0+z1)/2);
-  box(CW,CH,0.14, MAT.wall2, 0, CH/2, z1+0.07);   // outer hatch (behind you)
-  plane(1.2,0.34,new THREE.MeshBasicMaterial({map:textTex('AIRLOCK','#0d2530','#9db8c4',512,128,64)}), 0, 2.6, z1+0.0, Math.PI);
-  const L=new THREE.PointLight(0xbfe8dd, 10, 7, 1.8); L.position.set(0, CH-0.4, (z0+z1)/2); world.add(L); lampLights.push(L);
-}
-let innerDoor=null;
-function buildInnerDoor(){ innerDoor = box(CW,2.7,0.12, new THREE.MeshLambertMaterial({map:panelTex('#a2b8c6',2)}), 0, 1.35, CZ0); }
+  const af=plane(CW,z1-z0,lam(cropTex(corr,...CROP.floor,2,1)), 0,0,(z0+z1)/2); af.rotation.x=-Math.PI/2;
+  const ac=plane(CW,z1-z0,lam(cropTex(corr,...CROP.ceil,2,1)), 0,CH,(z0+z1)/2); ac.rotation.x=Math.PI/2;
+  plane(z1-z0,CH,lam(cropTex(corr,...CROP.wallL,1,1)), -CW/2,CH/2,(z0+z1)/2, Math.PI/2);
+  plane(z1-z0,CH,lam(cropTex(corr,...CROP.wallR,1,1)),  CW/2,CH/2,(z0+z1)/2, -Math.PI/2);
+  plane(CW,CH,lam(cropTex(corr,...CROP.wallEnd)), 0,CH/2,z1,Math.PI);
+  const L=new THREE.PointLight(0xbfe8dd,10,7,1.8); L.position.set(0,CH-0.4,(z0+z1)/2); world.add(L); lampLights.push(L);
+  innerDoor=plane(CW,2.7,lam(cropTex(corr,...CROP.doorStudio)), 0,1.35,CZ0, Math.PI);
 
-scene.add(new THREE.AmbientLight(0x8ea6b5, 0.55));
-buildCorridor(); buildStudioDoor(); buildStudio(); buildAirlock(); buildInnerDoor();
+  /* ===== first-person suit arm (canon cockpit art) ===== */
+  const ac2=document.getElementById('arm'); const actx=ac2.getContext('2d');
+  const sx=ARMCROP[0]*cock.width, sy=ARMCROP[1]*cock.height,
+        sw=(ARMCROP[2]-ARMCROP[0])*cock.width, sh=(ARMCROP[3]-ARMCROP[1])*cock.height;
+  actx.drawImage(cock, sx,sy,sw,sh, 0,0,820,420);
+  /* soft-fade the top & left edges so it sits on screen like a HUD, not a sticker */
+  const fade=actx.createLinearGradient(0,0,0,140);
+  fade.addColorStop(0,'rgba(0,0,0,1)'); fade.addColorStop(1,'rgba(0,0,0,0)');
+  actx.globalCompositeOperation='destination-out';
+  actx.fillStyle=fade; actx.fillRect(0,0,820,140);
+  const fadeL=actx.createLinearGradient(0,0,120,0);
+  fadeL.addColorStop(0,'rgba(0,0,0,1)'); fadeL.addColorStop(1,'rgba(0,0,0,0)');
+  actx.fillStyle=fadeL; actx.fillRect(0,0,120,420);
+  actx.globalCompositeOperation='source-over';
+}
+scene.add(new THREE.AmbientLight(0x9ab2c0, 0.6));
+const worldReady = buildWorld();
 
 /* ================= walkable bounds ================= */
-const ROOMS = [
-  {x0:-CW/2+0.3, x1:CW/2-0.3, z0:CZ1+0.35, z1:CZ0+2.7},                 // corridor+airlock strip
-  {x0:STU.x0+0.35, x1:STU.x1+0.5, z0:STU.z0+0.35, z1:STU.z1-0.35},      // studio (overlaps doorway)
+const ROOMS=[
+  {x0:-CW/2+0.3,x1:CW/2-0.3,z0:CZ1+0.35,z1:CZ0+2.7},
+  {x0:STU.x0+0.35,x1:STU.x1+0.5,z0:STU.z0+0.35,z1:STU.z1-0.35},
 ];
+let doorsOpen=false;
 function canStand(x,z){
-  for (const r of ROOMS) if (x>r.x0 && x<r.x1 && z>r.z0 && z<r.z1){
-    if (r===ROOMS[1] && x>STU.x1-0.2 && Math.abs(z-SDZ)>0.8) continue;   // only pass wall at doorway
-    if (r===ROOMS[0] && innerDoor && innerDoor.position.y>0.6 && z<CZ0+0.35 && z>CZ0-0.35 && MODE==='world' && !doorsOpen) continue;
+  for(const r of ROOMS) if(x>r.x0&&x<r.x1&&z>r.z0&&z<r.z1){
+    if(r===ROOMS[1]&&x>STU.x1-0.2&&Math.abs(z-SDZ)>0.8) continue;
+    if(r===ROOMS[0]&&!doorsOpen&&MODE==='world'&&z<CZ0+0.35&&z>CZ0-0.35) continue;
     return true;
   }
   return false;
 }
 
-/* ================= flat cockpit prologue (unchanged 2.5D) ================= */
+/* ================= flat cockpit prologue ================= */
 const R=14, ARC=THREE.MathUtils.degToRad(128);
 let room=null, roomH=1;
-function setFlat(url, aspect){
-  return new Promise(res => new THREE.TextureLoader().load(url, tex => {
+function setFlat(url,aspect){
+  return new Promise(res=>new THREE.TextureLoader().load(url,tex=>{
     tex.colorSpace=THREE.SRGBColorSpace;
     roomH=(R*ARC)/aspect;
     const geo=new THREE.CylinderGeometry(R,R,roomH,64,1,true,-ARC/2,ARC); geo.scale(-1,1,1);
@@ -339,16 +330,16 @@ function setFlat(url, aspect){
     scene.add(room); res();
   }));
 }
-setFlat('entry-a.png', 1672/941);
+setFlat('entry-a.png',1672/941);
 
 /* ================= state / UI ================= */
 const $=id=>document.getElementById(id);
-const gate=$('gate'), beat=$('beat'), beatWho=$('beatWho'), beatText=$('beatText'),
-      hint=$('hint'), dock=$('dock'), vid=$('dockVid'), endcard=$('endcard'),
-      donotcard=$('donotcard'), alarm=$('alarm'), stick=$('stick'), stickNub=$('stickNub');
+const gate=$('gate'),beat=$('beat'),beatWho=$('beatWho'),beatText=$('beatText'),
+      hint=$('hint'),dock=$('dock'),vid=$('dockVid'),endcard=$('endcard'),
+      donotcard=$('donotcard'),alarm=$('alarm'),stick=$('stick'),stickNub=$('stickNub'),armEl=$('arm');
 
 const VO={};
-for (const n of ['narrator_burst','lockwood_airlock','narrator_docked','lockwood_button','narrator_studio','legroom_greet','lockwood_greet']){
+for(const n of ['narrator_burst','lockwood_airlock','narrator_docked','lockwood_button','narrator_studio','legroom_greet','lockwood_greet']){
   VO[n]=new Audio(n+'.wav'); VO[n].preload='auto';
 }
 let nowPlaying=null;
@@ -360,177 +351,169 @@ const BEATS=[
   { who:'◈ M. LOCKWOOD — OPERATIONS · ON CRT ◈', vo:'lockwood_airlock',
     text:'Agent — Lockwood, Operations desk. That packet needs to reach the <b>studio floor</b> before the on-air light. The One-Voice Mainframe is scrubbing feeds while we talk. <b>Tap the AIRLOCK</b> and get inside.' },
 ];
-let MODE='flat', beatIdx=-1, phase='gate', delivered=false, endShown=false, doorsOpen=false, studioWelcomed=false;
+let MODE='flat', beatIdx=-1, phase='gate', delivered=false, endShown=false, studioWelcomed=false;
 
 const TAGS={
-  airlock:{el:$('tag-airlock'), fx:0.669, fy:0.955},
-  button: {el:$('tag-button'),  fx:0.952, fy:0.780},
+  airlock:{el:$('tag-airlock'),fx:0.669,fy:0.955},
+  button:{el:$('tag-button'),fx:0.952,fy:0.780},
 };
 let activeTags=[];
 function showTags(n){ activeTags=n; for(const k in TAGS) TAGS[k].el.style.display=n.includes(k)?'block':'none'; }
 const v3=new THREE.Vector3();
 function projectTags(){
-  if (MODE!=='flat') return;
+  if(MODE!=='flat') return;
   for(const name of activeTags){
     const t=TAGS[name], a=(t.fx-0.5)*ARC;
     v3.set(Math.sin(a)*R,(0.5-t.fy)*roomH,-Math.cos(a)*R).project(camera);
-    if (v3.z>1){ t.el.style.display='none'; continue; }
+    if(v3.z>1){t.el.style.display='none';continue;}
     t.el.style.display='block';
     t.el.style.left=((v3.x*0.5+0.5)*innerWidth)+'px';
     t.el.style.top =((-v3.y*0.5+0.5)*innerHeight)+'px';
   }
 }
 
-gate.addEventListener('click', ()=>{
+gate.addEventListener('click',()=>{
   gate.style.display='none';
   hint.textContent='DRAG TO LOOK AROUND'; hint.style.display='block';
-  setTimeout(()=>{hint.style.display='none'; nextBeat();}, 2400);
+  setTimeout(()=>{hint.style.display='none'; nextBeat();},2400);
   phase='look'; showTags(['button']);
 });
 function nextBeat(){
   beatIdx++;
-  if (beatIdx<BEATS.length){
+  if(beatIdx<BEATS.length){
     beatWho.innerHTML=BEATS[beatIdx].who; beatText.innerHTML=BEATS[beatIdx].text;
     say(BEATS[beatIdx].vo); beat.style.display='block'; phase='beat';
   } else { beat.style.display='none'; phase='airlock'; showTags(['airlock','button']); }
 }
-beat.addEventListener('click', ()=>{ if(phase==='beat') nextBeat(); else beat.style.display='none'; });
+beat.addEventListener('click',e=>{ if(e.target.tagName==='A') return; if(phase==='beat') nextBeat(); else beat.style.display='none'; });
 
-TAGS.button.el.addEventListener('click', ()=>{
+TAGS.button.el.addEventListener('click',()=>{
   alarm.style.display='block'; setTimeout(()=>alarm.style.display='none',1800);
   donotcard.style.display='block'; say('lockwood_button');
 });
-donotcard.addEventListener('click', ()=>donotcard.style.display='none');
-$('stayBtn').addEventListener('click', ()=>{ endcard.style.display='none'; });
+donotcard.addEventListener('click',()=>donotcard.style.display='none');
+$('stayBtn').addEventListener('click',()=>{endcard.style.display='none';});
 
-/* airlock tap → docking video → REAL 3D */
-TAGS.airlock.el.addEventListener('click', async ()=>{
+TAGS.airlock.el.addEventListener('click',async()=>{
   phase='dock'; showTags([]); beat.style.display='none';
   dock.style.display='block';
   vid.play().catch(()=>{});
-  await new Promise(r=>{vid.onended=r; vid.onerror=r; setTimeout(r,20000);});
+  await Promise.all([worldReady, new Promise(r=>{vid.onended=r; vid.onerror=r; setTimeout(r,20000);})]);
   dock.style.display='none';
-  if (room){ scene.remove(room); room.geometry.dispose(); room.material.map?.dispose(); room.material.dispose(); room=null; }
-  MODE='world'; world.visible=true;
+  if(room){scene.remove(room);room.geometry.dispose();room.material.map?.dispose();room.material.dispose();room=null;}
+  MODE='world'; world.visible=true; armEl.style.display='block';
   player.set(0,0,CZ0+1.6); yaw=Math.PI; tYaw=Math.PI; pitch=0; tPitch=0;
   phase='station';
   say('narrator_docked');
   beatWho.innerHTML='◈ THE NARRATOR ◈';
   beatText.innerHTML='Docking confirmed. You are aboard <b>Skylab 2</b> — and this time, Agent, <b>you have legs</b>. The studio is down the corridor, first door on the left. The packet does not deliver itself.';
   beat.style.display='block';
-  hint.textContent = isTouch ? 'LEFT THUMB = WALK · RIGHT = LOOK' : 'W A S D = WALK · DRAG = LOOK';
-  hint.style.display='block'; setTimeout(()=>hint.style.display='none', 6000);
-  setTimeout(()=>{ doorsOpen=true; }, 2500);   // inner airlock door releases
+  hint.textContent=isTouch?'LEFT THUMB = WALK · RIGHT = LOOK':'W A S D = WALK · DRAG = LOOK';
+  hint.style.display='block'; setTimeout(()=>hint.style.display='none',6000);
+  setTimeout(()=>{doorsOpen=true;},2500);
 });
 
 /* ================= player controller ================= */
 const player=new THREE.Vector3(0,0,CZ0+1.6);
-let yaw=Math.PI, pitch=0, tYaw=Math.PI, tPitch=0;
+let yaw=Math.PI,pitch=0,tYaw=Math.PI,tPitch=0;
 const keys={};
 addEventListener('keydown',e=>keys[e.key.toLowerCase()]=true);
 addEventListener('keyup',e=>keys[e.key.toLowerCase()]=false);
 
-const isTouch = matchMedia('(pointer:coarse)').matches;
-let lookId=null, lx=0, ly=0, moveId=null, mx0=0, my0=0, mvx=0, mvz=0;
+const isTouch=matchMedia('(pointer:coarse)').matches;
+let lookId=null,lx=0,ly=0,moveId=null,mx0=0,my0=0,mvx=0,mvz=0;
 canvas.addEventListener('pointerdown',e=>{
-  if (MODE==='world' && isTouch && e.clientX<innerWidth*0.45){
+  if(MODE==='world'&&isTouch&&e.clientX<innerWidth*0.45){
     moveId=e.pointerId; mx0=e.clientX; my0=e.clientY;
     stick.style.display='block'; stick.style.left=(mx0-55)+'px'; stick.style.top=(my0-55)+'px';
   } else { lookId=e.pointerId; lx=e.clientX; ly=e.clientY; }
 });
 addEventListener('pointermove',e=>{
-  if (e.pointerId===lookId){
-    tYaw += (e.clientX-lx)*0.0032; tPitch = THREE.MathUtils.clamp(tPitch+(e.clientY-ly)*0.0028, -1.1, 1.1);
-    if (MODE==='flat'){ tYaw=THREE.MathUtils.clamp(tYaw, Math.PI-1.22, Math.PI+1.22); tPitch=THREE.MathUtils.clamp(tPitch,-0.55,0.55); }
+  if(e.pointerId===lookId){
+    tYaw+=(e.clientX-lx)*0.0032; tPitch=THREE.MathUtils.clamp(tPitch+(e.clientY-ly)*0.0028,-1.1,1.1);
+    if(MODE==='flat'){tYaw=THREE.MathUtils.clamp(tYaw,Math.PI-1.22,Math.PI+1.22);tPitch=THREE.MathUtils.clamp(tPitch,-0.55,0.55);}
     lx=e.clientX; ly=e.clientY;
-  } else if (e.pointerId===moveId){
+  } else if(e.pointerId===moveId){
     const dx=THREE.MathUtils.clamp((e.clientX-mx0)/45,-1,1), dy=THREE.MathUtils.clamp((e.clientY-my0)/45,-1,1);
     mvx=dx; mvz=dy;
     stickNub.style.transform=`translate(calc(-50% + ${dx*30}px), calc(-50% + ${dy*30}px))`;
   }
 });
 addEventListener('pointerup',e=>{
-  if (e.pointerId===lookId) lookId=null;
-  if (e.pointerId===moveId){ moveId=null; mvx=0; mvz=0; stick.style.display='none'; stickNub.style.transform='translate(-50%,-50%)'; }
+  if(e.pointerId===lookId) lookId=null;
+  if(e.pointerId===moveId){moveId=null;mvx=0;mvz=0;stick.style.display='none';stickNub.style.transform='translate(-50%,-50%)';}
 });
 
-/* tap-to-interact: raycast standees */
 const ray=new THREE.Raycaster(); const ndc=new THREE.Vector2();
 canvas.addEventListener('click',e=>{
-  if (MODE!=='world') return;
-  ndc.set((e.clientX/innerWidth)*2-1, -(e.clientY/innerHeight)*2+1);
+  if(MODE!=='world') return;
+  ndc.set((e.clientX/innerWidth)*2-1,-(e.clientY/innerHeight)*2+1);
   ray.setFromCamera(ndc,camera);
   const hits=ray.intersectObjects(standees.map(s=>s.mesh));
-  if (hits.length && hits[0].distance<4){
-    const s=standees.find(s=>s.mesh===hits[0].object); if (s) trigger(s);
+  if(hits.length&&hits[0].distance<4){
+    const s=standees.find(s=>s.mesh===hits[0].object); if(s) trigger(s);
   }
 });
 function trigger(s){
   const now=performance.now();
-  if (now-s.cool<15000) return; s.cool=now;
+  if(now-s.cool<15000) return; s.cool=now;
   s.action();
 }
 
 /* ================= main loop ================= */
 const clock=new THREE.Clock();
-/* dev handle (harmless in prod) */
-window.__wt = { get pos(){return {x:player.x.toFixed(2), z:player.z.toFixed(2), yaw:yaw.toFixed(2), mode:MODE, phase, delivered, doorsOpen};}, turn(d){tYaw+=d;}, };
-function resize(){ renderer.setSize(innerWidth,innerHeight,false); camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); }
+window.__wt={get pos(){return{x:player.x.toFixed(2),z:player.z.toFixed(2),yaw:yaw.toFixed(2),mode:MODE,phase,delivered,doorsOpen};},turn(d){tYaw+=d;}};
+function resize(){renderer.setSize(innerWidth,innerHeight,false);camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();}
 addEventListener('resize',resize); resize();
 
 renderer.setAnimationLoop(()=>{
   const dt=Math.min(clock.getDelta(),0.05), t=clock.elapsedTime;
   yaw+=(tYaw-yaw)*0.14; pitch+=(tPitch-pitch)*0.14;
 
-  if (MODE==='flat'){
+  if(MODE==='flat'){
     camera.position.set(0,0,0);
-    camera.rotation.set(-pitch+Math.sin(t*0.5)*0.006, -(yaw-Math.PI)+Math.sin(t*0.33)*0.008, Math.sin(t*0.21)*0.004, 'YXZ');
+    camera.rotation.set(-pitch+Math.sin(t*0.5)*0.006,-(yaw-Math.PI)+Math.sin(t*0.33)*0.008,Math.sin(t*0.21)*0.004,'YXZ');
   } else {
-    // movement
     let fx=0,fz=0;
-    if (keys['w']||keys['arrowup']) fz+=1;
-    if (keys['s']||keys['arrowdown']) fz-=1;
-    if (keys['a']||keys['arrowleft']) fx-=1;
-    if (keys['d']||keys['arrowright']) fx+=1;
+    if(keys['w']||keys['arrowup'])fz+=1;
+    if(keys['s']||keys['arrowdown'])fz-=1;
+    if(keys['a']||keys['arrowleft'])fx-=1;
+    if(keys['d']||keys['arrowright'])fx+=1;
     fz+=-mvz; fx+=mvx;
     const len=Math.hypot(fx,fz)||1; fx/=len; fz/=len;
     const sp=3.1*dt;
-    const dx=(-Math.sin(yaw)*fz - Math.cos(yaw)*fx)*sp;   // forward=(-sin,0,cos), right=(-cos,0,-sin)
-    const dz=( Math.cos(yaw)*fz - Math.sin(yaw)*fx)*sp;
-    if (canStand(player.x+dx, player.z)) player.x+=dx;
-    if (canStand(player.x, player.z+dz)) player.z+=dz;
-    // doors
-    if (studioDoor){
-      const near=Math.hypot(player.x-(-CW/2), player.z-SDZ)<2.6;
-      doorOpen=THREE.MathUtils.lerp(doorOpen, near?1:0, 0.08);
-      studioDoor.position.y=1.25+doorOpen*2.35;
+    const dx=(-Math.sin(yaw)*fz-Math.cos(yaw)*fx)*sp;
+    const dz=( Math.cos(yaw)*fz-Math.sin(yaw)*fx)*sp;
+    if(canStand(player.x+dx,player.z)) player.x+=dx;
+    if(canStand(player.x,player.z+dz)) player.z+=dz;
+    if(studioDoor){
+      const near=Math.hypot(player.x-(-CW/2),player.z-SDZ)<2.6;
+      doorOpen=THREE.MathUtils.lerp(doorOpen,near?1:0,0.08);
+      studioDoor.position.y=1.3+doorOpen*2.35;
     }
-    if (innerDoor && doorsOpen) innerDoor.position.y=THREE.MathUtils.lerp(innerDoor.position.y, 4.1, 0.06);
-    // proximity greetings
-    for (const s of standees){
-      if (s.name==='button') continue;
-      const d=Math.hypot(player.x-s.mesh.position.x, player.z-s.mesh.position.z);
-      if (d<s.r) trigger(s);
-      if (s.name!=='orb') { /* standees gently face the player */
-        s.mesh.rotation.y = Math.atan2(player.x-s.mesh.position.x, player.z-s.mesh.position.z);
-      }
+    if(innerDoor&&doorsOpen) innerDoor.position.y=THREE.MathUtils.lerp(innerDoor.position.y,4.2,0.06);
+    for(const s of standees){
+      if(s.name==='button'||s.name==='equip') continue;
+      const d=Math.hypot(player.x-s.mesh.position.x,player.z-s.mesh.position.z);
+      if(d<s.r) trigger(s);
+      if(s.name!=='orb') s.mesh.rotation.y=Math.atan2(player.x-s.mesh.position.x,player.z-s.mesh.position.z);
+      s.mesh.position.y=(s.name==='orb'?1.0:s.mesh.geometry.parameters.height/2+0.02)+Math.sin(t*1.6+s.mesh.position.x)*0.02;
     }
-    // first time crossing into the studio → the Narrator welcomes you
-    if (!studioWelcomed && player.x<STU.x1-0.3){
+    if(!studioWelcomed&&player.x<STU.x1-0.3){
       studioWelcomed=true; say('narrator_studio');
       beatWho.innerHTML='◈ THE NARRATOR ◈';
       beatText.innerHTML='The studio. The desk lights stay warm between broadcasts. <b>They know you are here, Agent.</b> Walk up and say hello — LeGroom takes the packet.';
       beat.style.display='block';
     }
-    // delivered → endcard once, on leaving the studio
-    if (delivered && !endShown && player.x>STU.x1+0.4){
+    if(delivered&&!endShown&&player.x>STU.x1+0.4){
       endShown=true; endcard.style.display='block';
     }
-    const bob=Math.sin(t*7)*0.03*Math.min(1,Math.hypot(fx,fz));
-    camera.position.set(player.x, 1.6+bob, player.z);
-    camera.rotation.set(-pitch, -yaw+Math.PI, 0, 'YXZ');
-    // lamp flicker, subtle
-    for (let i=0;i<lampLights.length;i++) lampLights[i].intensity = 12+Math.sin(t*13+i*7)*0.7;
+    const moving=Math.min(1,Math.hypot(fx,fz));
+    const bob=Math.sin(t*7)*0.03*moving;
+    camera.position.set(player.x,1.6+bob,player.z);
+    camera.rotation.set(-pitch,-yaw+Math.PI,0,'YXZ');
+    armEl.style.transform=`translate(${Math.sin(t*3.5)*6*moving}px, ${Math.abs(Math.sin(t*7))*10*moving}px)`;
+    for(let i=0;i<lampLights.length;i++) lampLights[i].intensity=12+Math.sin(t*13+i*7)*0.7;
   }
   projectTags();
   renderer.render(scene,camera);
