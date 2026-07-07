@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>SNN Skylab — Walkable Walkthrough (dev)</title>
+<style>
+  /* v0.2 — COCKPIT → AIRLOCK → HALLWAY (front-down build; docs/walkthrough_canon/STORYLINE.md)
+     Lives SEPARATELY from the live click-through — never replaces it. */
+  * { -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; }
+  html,body { margin:0; padding:0; background:#000; overflow:hidden; height:100%; font-family:'Courier New',monospace; }
+  #scene { position:fixed; inset:0; touch-action:none; }
+  .panel {
+    position:fixed; left:50%; transform:translateX(-50%);
+    background:rgba(4,14,20,0.92); border:1px solid #37e0b8; border-radius:10px;
+    color:#d8fff4; padding:16px 20px; max-width:min(560px,88vw);
+    font-size:16px; line-height:1.45; z-index:30;
+    text-shadow:0 2px 6px #000; box-shadow:0 0 24px rgba(55,224,184,0.25);
+  }
+  .panel b { color:#37e0b8; }
+  .panel .who { color:#37e0b8; font-size:13px; letter-spacing:2px; display:block; margin-bottom:6px; }
+  #gate { top:50%; transform:translate(-50%,-50%); text-align:center; cursor:pointer; }
+  #gate .big { font-size:19px; color:#fff; }
+  #gate .go { margin-top:14px; border:1px solid #37e0b8; border-radius:8px; padding:12px 18px;
+              display:inline-block; font-size:17px; color:#0a1410; background:#37e0b8; font-weight:bold; }
+  #beat { bottom:max(18px, env(safe-area-inset-bottom)); display:none; cursor:pointer; }
+  #beat .next { margin-top:10px; text-align:right; color:#37e0b8; font-size:14px; animation:blink 1.4s infinite; }
+  @keyframes blink { 50% { opacity:0.35; } }
+  #hint { position:fixed; top:max(10px, env(safe-area-inset-top)); left:50%; transform:translateX(-50%);
+          color:#bfeee2; font-size:13px; letter-spacing:1px; z-index:25; text-shadow:0 2px 4px #000;
+          background:rgba(0,0,0,0.45); padding:6px 12px; border-radius:14px; display:none; }
+  /* 3D-anchored hotspot tags */
+  .tag { position:fixed; z-index:28; display:none; transform:translate(-50%,-50%); cursor:pointer; }
+  .tag .ring { width:74px; height:74px; border-radius:50%; border:3px solid #4ea3ff; margin:0 auto;
+               box-shadow:0 0 18px #4ea3ff, inset 0 0 12px rgba(78,163,255,0.5); animation:pulse 1.2s infinite; }
+  .tag.green .ring { border-color:#37e0b8; box-shadow:0 0 18px #37e0b8, inset 0 0 12px rgba(55,224,184,0.5); }
+  .tag .lbl { position:absolute; top:-34px; left:50%; transform:translateX(-50%); white-space:nowrap;
+              color:#fff; background:rgba(10,30,60,0.9); border:1px solid #4ea3ff; border-radius:6px;
+              padding:4px 10px; font-size:14px; font-weight:bold; text-shadow:0 1px 3px #000; }
+  .tag.green .lbl { border-color:#37e0b8; background:rgba(8,35,28,0.9); }
+  .tag.ghost { width:110px; height:110px; }        /* invisible trap zone (the button) */
+  .tag.ghost .ring, .tag.ghost .lbl { display:none; }
+  @keyframes pulse { 0%{transform:scale(1);opacity:1} 70%{transform:scale(1.35);opacity:0.4} 100%{transform:scale(1);opacity:1} }
+  #dock { position:fixed; inset:0; background:#000; z-index:40; display:none; }
+  #dock video { width:100%; height:100%; object-fit:cover; }
+  #donotcard { top:50%; transform:translate(-50%,-50%); text-align:center; display:none; z-index:50;
+               border-color:#ff5050; box-shadow:0 0 30px rgba(255,80,80,0.5); cursor:pointer; }
+  #donotcard .who { color:#ff8080; }
+  #alarm { position:fixed; inset:0; background:rgba(255,30,30,0.35); z-index:45; display:none; pointer-events:none;
+           animation:alarmflash 0.28s 6; }
+  @keyframes alarmflash { 50% { background:rgba(255,30,30,0.02); } }
+  #endcard { top:50%; transform:translate(-50%,-50%); text-align:center; display:none; z-index:50; }
+  #endcard a { display:block; margin-top:12px; color:#0a1410; background:#37e0b8; border-radius:8px;
+               padding:12px 16px; font-size:16px; font-weight:bold; text-decoration:none; }
+  #endcard a.alt { background:transparent; color:#37e0b8; border:1px solid #37e0b8; }
+  .devtag { position:fixed; right:8px; top:max(8px, env(safe-area-inset-top)); color:#666; font-size:11px; z-index:20; }
+</style>
+</head>
+<body>
+<canvas id="scene"></canvas>
+<div class="devtag">wt-dev v0.4</div>
+<div id="hint">DRAG TO LOOK AROUND</div>
+
+<div id="gate" class="panel">
+  <span class="who">◈ INCOMING TRANSMISSION ◈</span>
+  <div class="big">[!] NFHC BURST DETECTED<br>GROUND TRUTH AGENT — LEVEL 1</div>
+  <div style="margin-top:8px">You launched from Earth. Skylab 2 dead ahead — 400 miles up.<br>The packet has to make the LIVE broadcast.</div>
+  <div class="go">TAP TO INITIATE HANDSHAKE</div>
+</div>
+
+<div id="beat" class="panel">
+  <span class="who" id="beatWho"></span>
+  <div id="beatText"></div>
+  <div class="next">[ TAP TO CONTINUE ]</div>
+</div>
+
+<div id="tag-airlock" class="tag"><div class="ring"></div><div class="lbl">TAP · HOME AIRLOCK</div></div>
+<div id="tag-button"  class="tag ghost"></div>
+<div id="tag-studio"  class="tag green"><div class="ring"></div><div class="lbl">STUDIO — DELIVER THE PACKET</div></div>
+<div id="tag-equip"   class="tag"><div class="ring"></div><div class="lbl">EQUIPMENT ROOM</div></div>
+<div id="tag-legroom" class="tag green"><div class="ring"></div><div class="lbl">MISTER LEGROOM</div></div>
+<div id="tag-lockS"   class="tag"><div class="ring"></div><div class="lbl">MISS LOCKWOOD</div></div>
+<div id="tag-orb"     class="tag"><div class="ring"></div><div class="lbl">THE ORB</div></div>
+<div id="tag-exitH"   class="tag"><div class="ring"></div><div class="lbl">← HALLWAY</div></div>
+
+<div id="alarm"></div>
+<div id="donotcard" class="panel">
+  <span class="who">◈ M. LOCKWOOD — OPERATIONS ◈</span>
+  <div>It says <b>DO NOT PRESS</b>.<br><br>That one is not gamified, Agent. That's a <b>real</b> button.<br><br>…Eyes forward. Airlock.</div>
+  <div class="next">[ TAP TO NEVER SPEAK OF THIS AGAIN ]</div>
+</div>
+
+<div id="dock"><video id="dockVid" playsinline preload="auto" src="entry-b.mp4"></video></div>
+
+<div id="endcard" class="panel">
+  <span class="who">◈ PACKET DELIVERED — STUDIO FLOOR ◈</span>
+  <div>The manifest held. The broadcast holds.<br>Lockwood is waiting inside with your <b>field promotion</b>.</div>
+  <a href="https://nothuman.fyi/studio/">ENTER THE STUDIO — CLAIM LEVEL II</a>
+  <a class="alt" href="https://nothuman.fyi/">VISIT THE ORIGINAL EXPERIENCE</a>
+</div>
+
+<script type="module">
+import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
+
+/* ---------- renderer / camera ---------- */
+const canvas = document.getElementById('scene');
+const renderer = new THREE.WebGLRenderer({canvas, antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(70, 1, 0.1, 500);
+
+/* starfield */
+{
+  const g = new THREE.BufferGeometry();
+  const N = 1600, pos = new Float32Array(N*3);
+  for (let i=0;i<N;i++){
+    const r = 180 + Math.random()*120, t = Math.random()*Math.PI*2, p = Math.acos(2*Math.random()-1);
+    pos[i*3]=r*Math.sin(p)*Math.cos(t); pos[i*3+1]=r*Math.cos(p); pos[i*3+2]=r*Math.sin(p)*Math.sin(t);
+  }
+  g.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  scene.add(new THREE.Points(g, new THREE.PointsMaterial({color:0xbfd8ff, size:1.4, sizeAttenuation:false})));
+}
+
+/* ---------- room surface: one curved screen, retextured per scene ---------- */
+const R = 14, ARC = THREE.MathUtils.degToRad(128);
+const loader = new THREE.TextureLoader();
+let room = null, roomH = 1;
+function setRoom(url, aspect){
+  return new Promise(res => loader.load(url, tex => {
+    tex.colorSpace = THREE.SRGBColorSpace;
+    roomH = (R*ARC)/aspect;
+    if (room){ scene.remove(room); room.geometry.dispose(); room.material.map?.dispose(); room.material.dispose(); }
+    const geo = new THREE.CylinderGeometry(R, R, roomH, 64, 1, true, -ARC/2, ARC);
+    geo.scale(-1,1,1);
+    room = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({map:tex, side:THREE.FrontSide}));
+    room.rotation.y = Math.PI;
+    scene.add(room);
+    res();
+  }));
+}
+
+/* dust */
+const dust = (() => {
+  const g = new THREE.BufferGeometry();
+  const N = 90, pos = new Float32Array(N*3);
+  for (let i=0;i<N;i++){ pos[i*3]=(Math.random()-0.5)*10; pos[i*3+1]=(Math.random()-0.5)*6; pos[i*3+2]=-2-Math.random()*9; }
+  g.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  const m = new THREE.Points(g, new THREE.PointsMaterial({color:0x88ffe0, size:0.035, transparent:true, opacity:0.5}));
+  scene.add(m); return m;
+})();
+
+/* ---------- look controls ---------- */
+let yaw=0, pitch=0, tYaw=0, tPitch=0, dragging=false, lx=0, ly=0;
+const YAW_MAX = THREE.MathUtils.degToRad(70), PITCH_MAX = THREE.MathUtils.degToRad(32);
+canvas.addEventListener('pointerdown', e=>{dragging=true; lx=e.clientX; ly=e.clientY;});
+addEventListener('pointermove', e=>{
+  if(!dragging) return;
+  tYaw   = THREE.MathUtils.clamp(tYaw+(e.clientX-lx)*0.0032, -YAW_MAX, YAW_MAX);
+  tPitch = THREE.MathUtils.clamp(tPitch+(e.clientY-ly)*0.0028, -PITCH_MAX, PITCH_MAX);
+  lx=e.clientX; ly=e.clientY;
+});
+addEventListener('pointerup', ()=>dragging=false);
+
+/* ---------- 3D-anchored HTML tags ---------- */
+const TAGS = {
+  airlock: { el: document.getElementById('tag-airlock'), fx:0.669, fy:0.955 }, // HOME AIRLOCK on entry-a
+  button:  { el: document.getElementById('tag-button'),  fx:0.952, fy:0.780 }, // the DO-NOT-PRESS button
+  studio:  { el: document.getElementById('tag-studio'),  fx:0.115, fy:0.520 }, // STUDIO door on entry-c
+  equip:   { el: document.getElementById('tag-equip'),   fx:0.885, fy:0.520 }, // EQUIPMENT ROOM door
+  legroom: { el: document.getElementById('tag-legroom'), fx:0.560, fy:0.560 }, // LeGroom at the desk (panoramic)
+  lockS:   { el: document.getElementById('tag-lockS'),   fx:0.740, fy:0.720 }, // Lockwood at consoles
+  orb:     { el: document.getElementById('tag-orb'),     fx:0.710, fy:0.970 }, // the orb, one orb two faces
+  exitH:   { el: document.getElementById('tag-exitH'),   fx:0.060, fy:0.500 }, // back to the hallway
+};
+let activeTags = [];
+function showTags(names){ activeTags = names; for (const k in TAGS) TAGS[k].el.style.display = names.includes(k) ? 'block' : 'none'; }
+const v3 = new THREE.Vector3();
+function projectTags(){
+  for (const name of activeTags){
+    const t = TAGS[name];
+    const a = (t.fx-0.5)*ARC;
+    v3.set(Math.sin(a)*R, (0.5-t.fy)*roomH, -Math.cos(a)*R).project(camera);
+    if (v3.z > 1){ t.el.style.display='none'; continue; }
+    t.el.style.display='block';
+    t.el.style.left = ((v3.x*0.5+0.5)*innerWidth)+'px';
+    t.el.style.top  = ((-v3.y*0.5+0.5)*innerHeight)+'px';
+  }
+}
+
+/* ---------- story ---------- */
+const $ = id => document.getElementById(id);
+const gate=$('gate'), beat=$('beat'), beatWho=$('beatWho'), beatText=$('beatText'),
+      hint=$('hint'), dock=$('dock'), vid=$('dockVid'), endcard=$('endcard'),
+      donotcard=$('donotcard'), alarm=$('alarm');
+
+/* real canon voices (Narrator = Gemini Despina, Lockwood = Gemini Leda), pre-rendered WAVs */
+const VO = {};
+for (const n of ['narrator_burst','lockwood_airlock','narrator_docked','lockwood_button',
+                 'narrator_studio','legroom_greet','lockwood_greet']){
+  VO[n] = new Audio(n + '.wav'); VO[n].preload = 'auto';
+}
+let nowPlaying = null;
+function say(name){
+  if (nowPlaying){ nowPlaying.pause(); nowPlaying.currentTime = 0; }
+  nowPlaying = VO[name] || null;
+  if (nowPlaying) nowPlaying.play().catch(()=>{});
+}
+
+const COCKPIT_BEATS = [
+  { who:'◈ THE NARRATOR ◈', vo:'narrator_burst',
+    text:'That sound was not static, Agent. It was an <b>NFHC data burst</b> — machine-readable truth, packed for transit. Your manifest calls it <b>the Ground Truth packet</b>. It rides with you.' },
+  { who:'◈ M. LOCKWOOD — OPERATIONS · ON CRT ◈', vo:'lockwood_airlock',
+    text:'Agent — Lockwood, Operations desk. That packet needs to reach the <b>studio floor</b> before the on-air light. The One-Voice Mainframe is scrubbing feeds while we talk. <b>Tap the AIRLOCK</b> and get inside.' },
+];
+const HALLWAY_BEAT =
+  { who:'◈ THE NARRATOR ◈', vo:'narrator_docked',
+    text:'Docking confirmed. You are aboard <b>Skylab 2</b>. The ON AIR light is live — the broadcast is happening <b>now</b>. Studio is to your left, Agent. The packet does not deliver itself.' };
+
+let beatIdx=-1, phase='gate';
+setRoom('entry-a.png', 1672/941);   // cockpit first
+
+gate.addEventListener('click', () => {
+  gate.style.display='none'; hint.style.display='block';
+  setTimeout(()=>{ hint.style.display='none'; nextCockpitBeat(); }, 2600);
+  phase='look'; showTags(['button']);
+});
+function nextCockpitBeat(){
+  beatIdx++;
+  if (beatIdx < COCKPIT_BEATS.length){
+    beatWho.innerHTML=COCKPIT_BEATS[beatIdx].who; beatText.innerHTML=COCKPIT_BEATS[beatIdx].text;
+    say(COCKPIT_BEATS[beatIdx].vo);
+    beat.style.display='block'; phase='beat';
+  } else {
+    beat.style.display='none'; phase='airlock'; showTags(['airlock','button']);
+  }
+}
+beat.addEventListener('click', () => { if (phase==='beat') nextCockpitBeat(); else beat.style.display='none'; });
+
+/* the button. it says do not press. */
+TAGS.button.el.addEventListener('click', () => {
+  alarm.style.display='block';
+  setTimeout(()=>alarm.style.display='none', 1800);
+  donotcard.style.display='block';
+  say('lockwood_button');
+});
+donotcard.addEventListener('click', ()=> donotcard.style.display='none');
+
+/* airlock → docking video → hallway */
+TAGS.airlock.el.addEventListener('click', async () => {
+  phase='dock'; showTags([]); beat.style.display='none';
+  dock.style.display='block';
+  const hallwayReady = setRoom('entry-c-new.webp', 16/9);  // preload during video
+  vid.play().catch(()=>{});
+  await new Promise(r => { vid.onended=r; vid.onerror=r; setTimeout(r, 20000); });
+  await hallwayReady;
+  dock.style.display='none';
+  tYaw=0; tPitch=0; yaw=0; pitch=0;
+  phase='hallway';
+  beatWho.innerHTML=HALLWAY_BEAT.who; beatText.innerHTML=HALLWAY_BEAT.text;
+  say(HALLWAY_BEAT.vo);
+  beat.style.display='block';
+  showTags(['studio','equip']);
+});
+
+/* ---------- the STUDIO: live handoff during shows, walkable interior between ---------- */
+function onAir(){
+  // SNN airs 7am/12pm/5pm/9pm Pacific; treat first 75 min as "on air"
+  const q = new URLSearchParams(location.search);
+  if (q.has('backstage')) return false;   // dev/test override
+  if (q.has('onair')) return true;
+  const pt = new Date(new Date().toLocaleString('en-US', {timeZone:'America/Los_Angeles'}));
+  const mins = pt.getHours()*60 + pt.getMinutes();
+  return [420, 720, 1020, 1260].some(s => mins >= s && mins < s + 75);
+}
+
+TAGS.studio.el.addEventListener('click', async () => {
+  if (onAir()){ showTags([]); beat.style.display='none'; endcard.style.display='block'; phase='end'; return; }
+  showTags([]); beat.style.display='none';
+  await setRoom('skylab_panoramic.png', 1589/672);
+  tYaw=0; tPitch=0; yaw=0; pitch=0;
+  phase='studio';
+  beatWho.innerHTML='◈ THE NARRATOR ◈';
+  beatText.innerHTML='The studio, between broadcasts. The desk lights stay warm. <b>They know you are here, Agent.</b> Walk up and say hello — LeGroom takes the packet.';
+  say('narrator_studio');
+  beat.style.display='block';
+  showTags(['legroom','lockS','orb','exitH']);
+});
+
+let delivered = false;
+TAGS.legroom.el.addEventListener('click', () => {
+  say('legroom_greet');
+  beatWho.innerHTML='◈ MISTER LEGROOM — ANCHOR ◈';
+  beatText.innerHTML='H-h-h-hey-yo — you made it, Agent! <b>Packet received.</b> Real API, live inference, four times a day — not a recording, never a recording. The stutter is not a glitch: in a world of flawless deepfakes, <b>the flaw is the proof</b>. Bada-boom.';
+  beat.style.display='block';
+  delivered = true;
+});
+TAGS.lockS.el.addEventListener('click', () => {
+  say('lockwood_greet');
+  beatWho.innerHTML='◈ MISS LOCKWOOD — OPERATIONS ◈';
+  beatText.innerHTML='You again. Good. Before I say a word on air I read exactly what the last character said — and I fact-check it with this clipboard. <b>They call it hallucination. I call it an inventory error.</b> Either way, I catch it.';
+  beat.style.display='block';
+});
+TAGS.orb.el.addEventListener('click', () => {
+  beatWho.innerHTML='◈ CLAWDBOSS — ONE ORB, TWO FACES ◈';
+  beatText.innerHTML='<b>SIDE A:</b> BZZZT. Visitor detected. The correct figure is $47 billion.<br><b>SIDE B:</b> That number is completely fabricated and I have a different one that is also fabricated but with significantly more optimism! BOING!<br><i>(Their real voices arrive in the next build.)</i>';
+  beat.style.display='block';
+});
+TAGS.exitH.el.addEventListener('click', async () => {
+  if (delivered){ showTags([]); beat.style.display='none'; endcard.style.display='block'; phase='end'; return; }
+  showTags([]); beat.style.display='none';
+  await setRoom('entry-c-new.webp', 16/9);
+  tYaw=0; tPitch=0; yaw=0; pitch=0;
+  phase='hallway'; showTags(['studio','equip']);
+});
+
+TAGS.equip.el.addEventListener('click', () => {
+  beatWho.innerHTML='◈ THE NARRATOR ◈';
+  beatText.innerHTML='The Equipment Room — NFHC encoders, fresh shipment. Tap again to step inside the <b>live</b> Equipment Room.';
+  beat.style.display='block';
+  TAGS.equip.el.onclick = () => { location.href = 'https://nothuman.fyi/lab/'; };
+});
+
+/* ---------- loop ---------- */
+const clock = new THREE.Clock();
+function resize(){ renderer.setSize(innerWidth, innerHeight, false); camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); }
+addEventListener('resize', resize); resize();
+renderer.setAnimationLoop(() => {
+  const t = clock.getElapsedTime();
+  yaw += (tYaw-yaw)*0.09; pitch += (tPitch-pitch)*0.09;
+  camera.rotation.set(-pitch + Math.sin(t*0.5)*0.006, -yaw + Math.sin(t*0.33)*0.008, Math.sin(t*0.21)*0.004, 'YXZ');
+  dust.rotation.y = t*0.01;
+  projectTags();
+  renderer.render(scene, camera);
+});
+</script>
+</body>
+</html>

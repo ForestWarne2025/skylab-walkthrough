@@ -3,10 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>SNN Skylab — Walkable Walkthrough (dev)</title>
+<title>SNN Skylab — Walkable Walkthrough</title>
 <style>
-  /* v0.2 — COCKPIT → AIRLOCK → HALLWAY (front-down build; docs/walkthrough_canon/STORYLINE.md)
-     Lives SEPARATELY from the live click-through — never replaces it. */
+  /* v0.5 — TRUE 3D: airlock → corridor → studio as real walkable geometry.
+     Cockpit prologue stays 2.5D (you are strapped into a shuttle seat).
+     Cast appear as canon-art STANDEES in 3D space — cartoon people, real space.
+     The previous panorama version is preserved at classic.html (never delete history). */
   * { -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; }
   html,body { margin:0; padding:0; background:#000; overflow:hidden; height:100%; font-family:'Courier New',monospace; }
   #scene { position:fixed; inset:0; touch-action:none; }
@@ -27,18 +29,15 @@
   #beat .next { margin-top:10px; text-align:right; color:#37e0b8; font-size:14px; animation:blink 1.4s infinite; }
   @keyframes blink { 50% { opacity:0.35; } }
   #hint { position:fixed; top:max(10px, env(safe-area-inset-top)); left:50%; transform:translateX(-50%);
-          color:#bfeee2; font-size:13px; letter-spacing:1px; z-index:25; text-shadow:0 2px 4px #000;
-          background:rgba(0,0,0,0.45); padding:6px 12px; border-radius:14px; display:none; }
-  /* 3D-anchored hotspot tags */
+          color:#eafff8; font-size:14px; letter-spacing:1px; z-index:25; text-shadow:0 2px 4px #000;
+          background:rgba(0,0,0,0.55); padding:7px 14px; border-radius:14px; display:none; font-weight:bold; }
   .tag { position:fixed; z-index:28; display:none; transform:translate(-50%,-50%); cursor:pointer; }
   .tag .ring { width:74px; height:74px; border-radius:50%; border:3px solid #4ea3ff; margin:0 auto;
                box-shadow:0 0 18px #4ea3ff, inset 0 0 12px rgba(78,163,255,0.5); animation:pulse 1.2s infinite; }
-  .tag.green .ring { border-color:#37e0b8; box-shadow:0 0 18px #37e0b8, inset 0 0 12px rgba(55,224,184,0.5); }
   .tag .lbl { position:absolute; top:-34px; left:50%; transform:translateX(-50%); white-space:nowrap;
               color:#fff; background:rgba(10,30,60,0.9); border:1px solid #4ea3ff; border-radius:6px;
               padding:4px 10px; font-size:14px; font-weight:bold; text-shadow:0 1px 3px #000; }
-  .tag.green .lbl { border-color:#37e0b8; background:rgba(8,35,28,0.9); }
-  .tag.ghost { width:110px; height:110px; }        /* invisible trap zone (the button) */
+  .tag.ghost { width:110px; height:110px; }
   .tag.ghost .ring, .tag.ghost .lbl { display:none; }
   @keyframes pulse { 0%{transform:scale(1);opacity:1} 70%{transform:scale(1.35);opacity:0.4} 100%{transform:scale(1);opacity:1} }
   #dock { position:fixed; inset:0; background:#000; z-index:40; display:none; }
@@ -50,16 +49,22 @@
            animation:alarmflash 0.28s 6; }
   @keyframes alarmflash { 50% { background:rgba(255,30,30,0.02); } }
   #endcard { top:50%; transform:translate(-50%,-50%); text-align:center; display:none; z-index:50; }
-  #endcard a { display:block; margin-top:12px; color:#0a1410; background:#37e0b8; border-radius:8px;
-               padding:12px 16px; font-size:16px; font-weight:bold; text-decoration:none; }
+  #endcard a, #endcard .stay { display:block; margin-top:12px; color:#0a1410; background:#37e0b8; border-radius:8px;
+               padding:12px 16px; font-size:16px; font-weight:bold; text-decoration:none; cursor:pointer; }
   #endcard a.alt { background:transparent; color:#37e0b8; border:1px solid #37e0b8; }
+  #endcard .stay { background:transparent; color:#9adfce; border:1px dashed #37e0b8; }
   .devtag { position:fixed; right:8px; top:max(8px, env(safe-area-inset-top)); color:#666; font-size:11px; z-index:20; }
+  #stick { position:fixed; z-index:26; width:110px; height:110px; border-radius:50%; border:2px solid rgba(90,230,200,0.5);
+           background:rgba(20,50,45,0.25); display:none; pointer-events:none; }
+  #stickNub { position:absolute; left:50%; top:50%; width:44px; height:44px; border-radius:50%;
+              background:rgba(90,230,200,0.55); transform:translate(-50%,-50%); }
 </style>
 </head>
 <body>
 <canvas id="scene"></canvas>
-<div class="devtag">wt-dev v0.4</div>
-<div id="hint">DRAG TO LOOK AROUND</div>
+<div class="devtag">wt-3d v0.5</div>
+<div id="hint"></div>
+<div id="stick"><div id="stickNub"></div></div>
 
 <div id="gate" class="panel">
   <span class="who">◈ INCOMING TRANSMISSION ◈</span>
@@ -76,17 +81,11 @@
 
 <div id="tag-airlock" class="tag"><div class="ring"></div><div class="lbl">TAP · HOME AIRLOCK</div></div>
 <div id="tag-button"  class="tag ghost"></div>
-<div id="tag-studio"  class="tag green"><div class="ring"></div><div class="lbl">STUDIO — DELIVER THE PACKET</div></div>
-<div id="tag-equip"   class="tag"><div class="ring"></div><div class="lbl">EQUIPMENT ROOM</div></div>
-<div id="tag-legroom" class="tag green"><div class="ring"></div><div class="lbl">MISTER LEGROOM</div></div>
-<div id="tag-lockS"   class="tag"><div class="ring"></div><div class="lbl">MISS LOCKWOOD</div></div>
-<div id="tag-orb"     class="tag"><div class="ring"></div><div class="lbl">THE ORB</div></div>
-<div id="tag-exitH"   class="tag"><div class="ring"></div><div class="lbl">← HALLWAY</div></div>
 
 <div id="alarm"></div>
 <div id="donotcard" class="panel">
   <span class="who">◈ M. LOCKWOOD — OPERATIONS ◈</span>
-  <div>It says <b>DO NOT PRESS</b>.<br><br>That one is not gamified, Agent. That's a <b>real</b> button.<br><br>…Eyes forward. Airlock.</div>
+  <div>It says <b>DO NOT PRESS</b>.<br><br>That one is not gamified, Agent. That's a <b>real</b> button.<br><br>…Eyes forward.</div>
   <div class="next">[ TAP TO NEVER SPEAK OF THIS AGAIN ]</div>
 </div>
 
@@ -94,243 +93,447 @@
 
 <div id="endcard" class="panel">
   <span class="who">◈ PACKET DELIVERED — STUDIO FLOOR ◈</span>
-  <div>The manifest held. The broadcast holds.<br>Lockwood is waiting inside with your <b>field promotion</b>.</div>
-  <a href="https://nothuman.fyi/studio/">ENTER THE STUDIO — CLAIM LEVEL II</a>
+  <div>The manifest held. The broadcast holds.<br>Your <b>field promotion</b> is waiting.</div>
+  <a href="https://nothuman.fyi/studio/">ENTER THE LIVE STUDIO — CLAIM LEVEL II</a>
   <a class="alt" href="https://nothuman.fyi/">VISIT THE ORIGINAL EXPERIENCE</a>
+  <div class="stay" id="stayBtn">KEEP EXPLORING THE STATION</div>
 </div>
 
 <script type="module">
 import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
 
-/* ---------- renderer / camera ---------- */
+/* ================= renderer / scene ================= */
 const canvas = document.getElementById('scene');
 const renderer = new THREE.WebGLRenderer({canvas, antialias:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(70, 1, 0.1, 500);
+const camera = new THREE.PerspectiveCamera(72, 1, 0.05, 500);
 
-/* starfield */
+/* starfield everywhere outside */
 {
   const g = new THREE.BufferGeometry();
-  const N = 1600, pos = new Float32Array(N*3);
+  const N = 2200, pos = new Float32Array(N*3);
   for (let i=0;i<N;i++){
-    const r = 180 + Math.random()*120, t = Math.random()*Math.PI*2, p = Math.acos(2*Math.random()-1);
+    const r = 160 + Math.random()*140, t = Math.random()*Math.PI*2, p = Math.acos(2*Math.random()-1);
     pos[i*3]=r*Math.sin(p)*Math.cos(t); pos[i*3+1]=r*Math.cos(p); pos[i*3+2]=r*Math.sin(p)*Math.sin(t);
   }
   g.setAttribute('position', new THREE.BufferAttribute(pos,3));
-  scene.add(new THREE.Points(g, new THREE.PointsMaterial({color:0xbfd8ff, size:1.4, sizeAttenuation:false})));
+  scene.add(new THREE.Points(g, new THREE.PointsMaterial({color:0xbfd8ff, size:1.5, sizeAttenuation:false})));
 }
 
-/* ---------- room surface: one curved screen, retextured per scene ---------- */
-const R = 14, ARC = THREE.MathUtils.degToRad(128);
-const loader = new THREE.TextureLoader();
-let room = null, roomH = 1;
-function setRoom(url, aspect){
-  return new Promise(res => loader.load(url, tex => {
-    tex.colorSpace = THREE.SRGBColorSpace;
-    roomH = (R*ARC)/aspect;
-    if (room){ scene.remove(room); room.geometry.dispose(); room.material.map?.dispose(); room.material.dispose(); }
-    const geo = new THREE.CylinderGeometry(R, R, roomH, 64, 1, true, -ARC/2, ARC);
-    geo.scale(-1,1,1);
-    room = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({map:tex, side:THREE.FrontSide}));
-    room.rotation.y = Math.PI;
-    scene.add(room);
-    res();
-  }));
+/* ================= canvas textures (rusted blue-grey cartoon panels) ================= */
+function makeCanvas(w,h,draw){ const c=document.createElement('canvas'); c.width=w; c.height=h; draw(c.getContext('2d')); const t=new THREE.CanvasTexture(c); t.colorSpace=THREE.SRGBColorSpace; return t; }
+function panelTex(base='#8fa8b8', seams=4){
+  return makeCanvas(512,512,x=>{
+    x.fillStyle=base; x.fillRect(0,0,512,512);
+    x.strokeStyle='rgba(30,50,60,0.55)'; x.lineWidth=5;
+    const step=512/seams;
+    for(let i=0;i<=seams;i++){ x.beginPath(); x.moveTo(i*step,0); x.lineTo(i*step,512); x.stroke(); x.beginPath(); x.moveTo(0,i*step); x.lineTo(512,i*step); x.stroke(); }
+    x.fillStyle='rgba(35,55,66,0.85)';
+    for(let i=0;i<=seams;i++) for(let j=0;j<=seams;j++){
+      for(const [dx,dy] of [[18,18],[step-18,18],[18,step-18],[step-18,step-18]]){
+        x.beginPath(); x.arc(i*step+dx-((i===seams)?step:0)+((i===seams)?0:0), j*step+dy-((j===seams)?step:0)+((j===seams)?0:0), 5, 0, 7); x.fill();
+      }
+    }
+    x.globalAlpha=0.35; x.fillStyle='#8a5a30';
+    for(let k=0;k<7;k++){ const rx=Math.random()*512, ry=Math.random()*512, rr=12+Math.random()*46;
+      const gr=x.createRadialGradient(rx,ry,2,rx,ry,rr); gr.addColorStop(0,'rgba(140,85,40,0.8)'); gr.addColorStop(1,'rgba(140,85,40,0)');
+      x.fillStyle=gr; x.beginPath(); x.arc(rx,ry,rr,0,7); x.fill(); }
+    x.globalAlpha=1;
+  });
+}
+function textTex(txt, fg, bg, w=512, h=160, fs=90){
+  return makeCanvas(w,h,x=>{ x.fillStyle=bg; x.fillRect(0,0,w,h);
+    x.strokeStyle='rgba(255,255,255,0.25)'; x.lineWidth=6; x.strokeRect(6,6,w-12,h-12);
+    x.fillStyle=fg; x.font=`bold ${fs}px Courier New`; x.textAlign='center'; x.textBaseline='middle';
+    x.shadowColor=fg; x.shadowBlur=24; x.fillText(txt, w/2, h/2+4); });
+}
+function starsTex(){
+  return makeCanvas(512,256,x=>{ const g=x.createLinearGradient(0,0,0,256); g.addColorStop(0,'#050a18'); g.addColorStop(1,'#0a1630');
+    x.fillStyle=g; x.fillRect(0,0,512,256);
+    for(let i=0;i<220;i++){ x.fillStyle=`rgba(255,255,255,${0.3+Math.random()*0.7})`; const s=Math.random()<0.9?1:2; x.fillRect(Math.random()*512, Math.random()*256, s, s); }
+    const eg=x.createRadialGradient(430,300,40,430,300,180); eg.addColorStop(0,'#4d8fd6'); eg.addColorStop(0.6,'#2a5fa0'); eg.addColorStop(1,'rgba(20,50,100,0)');
+    x.fillStyle=eg; x.beginPath(); x.arc(430,300,180,0,7); x.fill(); });
 }
 
-/* dust */
-const dust = (() => {
-  const g = new THREE.BufferGeometry();
-  const N = 90, pos = new Float32Array(N*3);
-  for (let i=0;i<N;i++){ pos[i*3]=(Math.random()-0.5)*10; pos[i*3+1]=(Math.random()-0.5)*6; pos[i*3+2]=-2-Math.random()*9; }
-  g.setAttribute('position', new THREE.BufferAttribute(pos,3));
-  const m = new THREE.Points(g, new THREE.PointsMaterial({color:0x88ffe0, size:0.035, transparent:true, opacity:0.5}));
-  scene.add(m); return m;
-})();
-
-/* ---------- look controls ---------- */
-let yaw=0, pitch=0, tYaw=0, tPitch=0, dragging=false, lx=0, ly=0;
-const YAW_MAX = THREE.MathUtils.degToRad(70), PITCH_MAX = THREE.MathUtils.degToRad(32);
-canvas.addEventListener('pointerdown', e=>{dragging=true; lx=e.clientX; ly=e.clientY;});
-addEventListener('pointermove', e=>{
-  if(!dragging) return;
-  tYaw   = THREE.MathUtils.clamp(tYaw+(e.clientX-lx)*0.0032, -YAW_MAX, YAW_MAX);
-  tPitch = THREE.MathUtils.clamp(tPitch+(e.clientY-ly)*0.0028, -PITCH_MAX, PITCH_MAX);
-  lx=e.clientX; ly=e.clientY;
-});
-addEventListener('pointerup', ()=>dragging=false);
-
-/* ---------- 3D-anchored HTML tags ---------- */
-const TAGS = {
-  airlock: { el: document.getElementById('tag-airlock'), fx:0.669, fy:0.955 }, // HOME AIRLOCK on entry-a
-  button:  { el: document.getElementById('tag-button'),  fx:0.952, fy:0.780 }, // the DO-NOT-PRESS button
-  studio:  { el: document.getElementById('tag-studio'),  fx:0.115, fy:0.520 }, // STUDIO door on entry-c
-  equip:   { el: document.getElementById('tag-equip'),   fx:0.885, fy:0.520 }, // EQUIPMENT ROOM door
-  legroom: { el: document.getElementById('tag-legroom'), fx:0.560, fy:0.560 }, // LeGroom at the desk (panoramic)
-  lockS:   { el: document.getElementById('tag-lockS'),   fx:0.740, fy:0.720 }, // Lockwood at consoles
-  orb:     { el: document.getElementById('tag-orb'),     fx:0.710, fy:0.970 }, // the orb, one orb two faces
-  exitH:   { el: document.getElementById('tag-exitH'),   fx:0.060, fy:0.500 }, // back to the hallway
+const MAT = {
+  wall:  new THREE.MeshLambertMaterial({map:panelTex('#87a0b2')}),
+  wall2: new THREE.MeshLambertMaterial({map:panelTex('#7b93a6')}),
+  floor: new THREE.MeshLambertMaterial({map:panelTex('#5f7482',6)}),
+  ceil:  new THREE.MeshLambertMaterial({map:panelTex('#6d8494',3)}),
+  rib:   new THREE.MeshLambertMaterial({color:0x54707f}),
+  dark:  new THREE.MeshLambertMaterial({color:0x33454f}),
+  desk:  new THREE.MeshLambertMaterial({color:0xb8c4cc}),
+  deskFace: new THREE.MeshLambertMaterial({color:0x3d5563}),
 };
-let activeTags = [];
-function showTags(names){ activeTags = names; for (const k in TAGS) TAGS[k].el.style.display = names.includes(k) ? 'block' : 'none'; }
-const v3 = new THREE.Vector3();
-function projectTags(){
-  for (const name of activeTags){
-    const t = TAGS[name];
-    const a = (t.fx-0.5)*ARC;
-    v3.set(Math.sin(a)*R, (0.5-t.fy)*roomH, -Math.cos(a)*R).project(camera);
-    if (v3.z > 1){ t.el.style.display='none'; continue; }
-    t.el.style.display='block';
-    t.el.style.left = ((v3.x*0.5+0.5)*innerWidth)+'px';
-    t.el.style.top  = ((-v3.y*0.5+0.5)*innerHeight)+'px';
+
+/* ================= world group (3D station) ================= */
+const world = new THREE.Group(); world.visible = false; scene.add(world);
+const lampLights = [];
+function box(w,h,d,mat,x,y,z,g=world){ const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat); m.position.set(x,y,z); g.add(m); return m; }
+function plane(w,h,mat,x,y,z,ry=0,g=world){ const m=new THREE.Mesh(new THREE.PlaneGeometry(w,h),mat); m.position.set(x,y,z); m.rotation.y=ry; g.add(m); return m; }
+
+/* --- layout constants (meters) --- */
+const CW=3.6, CH=3.1;                 // corridor width/height
+const CZ0=7.6, CZ1=-14.6;             // corridor z range (entry → far end)
+const SDZ=-6;                          // studio door z (left wall)
+const STU={x0:-10.4, x1:-CW/2, z0:-10, z1:-2, h:3.5};  // studio room bounds
+
+function buildCorridor(){
+  const len = CZ0-CZ1, zc=(CZ0+CZ1)/2;
+  box(CW,0.12,len, MAT.floor, 0,-0.06, zc);
+  box(CW,0.12,len, MAT.ceil, 0, CH+0.06, zc);
+  // right wall solid; left wall split around the studio doorway
+  box(0.14,CH,len, MAT.wall, CW/2+0.07, CH/2, zc);
+  const dw=1.7;
+  const lz0 = CZ0, lz1 = SDZ+dw/2, lz2 = SDZ-dw/2, lz3 = CZ1;
+  box(0.14,CH,lz0-lz1, MAT.wall, -CW/2-0.07, CH/2, (lz0+lz1)/2);
+  box(0.14,CH,lz2-lz3, MAT.wall, -CW/2-0.07, CH/2, (lz2+lz3)/2);
+  box(0.14,CH-2.5,dw, MAT.wall, -CW/2-0.07, 2.5+(CH-2.5)/2, SDZ); // lintel over doorway
+  // far end wall + big porthole
+  box(CW,CH,0.14, MAT.wall2, 0, CH/2, CZ1-0.07);
+  const ring=new THREE.Mesh(new THREE.TorusGeometry(0.85,0.09,10,40), MAT.dark); ring.position.set(0,1.7,CZ1-0.05); world.add(ring);
+  plane(1.6,1.6,new THREE.MeshBasicMaterial({map:starsTex()}), 0,1.7,CZ1-0.06);
+  // ribs + lamps
+  for(let z=CZ0-1; z>CZ1+0.5; z-=2.2){
+    box(0.1,CH,0.22, MAT.rib, -CW/2+0.05, CH/2, z);
+    box(0.1,CH,0.22, MAT.rib,  CW/2-0.05, CH/2, z);
+    box(CW,0.1,0.22, MAT.rib, 0, CH-0.05, z);
+  }
+  for(let z=CZ0-2.4; z>CZ1+1; z-=4.4){
+    const bulb=new THREE.Mesh(new THREE.SphereGeometry(0.13,12,10), new THREE.MeshBasicMaterial({color:0xffe9b0}));
+    bulb.position.set(0, CH-0.28, z); world.add(bulb);
+    box(0.34,0.1,0.34, MAT.dark, 0, CH-0.16, z);
+    const L=new THREE.PointLight(0xffdf9e, 12, 9, 1.9); L.position.set(0, CH-0.45, z); world.add(L); lampLights.push(L);
+  }
+  // ON AIR sign above the studio doorway
+  plane(1.7,0.5,new THREE.MeshBasicMaterial({map:textTex('ON AIR','#ff4040','#1a0d0d')}), -CW/2+0.02, 2.75, SDZ, Math.PI/2);
+  // door labels
+  plane(1.4,0.34,new THREE.MeshBasicMaterial({map:textTex('STUDIO','#16303a','#c8d6dd',512,128,72)}), -CW/2+0.02, 2.32, SDZ, Math.PI/2);
+  plane(2.0,0.32,new THREE.MeshBasicMaterial({map:textTex('EQUIPMENT ROOM','#16303a','#c8d6dd',760,110,58)}), CW/2-0.02, 1.95, SDZ, -Math.PI/2);
+  // equipment room door on right wall — leads to the LIVE equipment room
+  const eqDoor = box(0.1,2.3,1.5, new THREE.MeshLambertMaterial({map:panelTex('#9db3c2',2)}), CW/2-0.02, 1.15, SDZ);
+  standees.push({mesh:eqDoor, name:'equip', r:1.7, cool:0, action:()=>{
+    beatWho.innerHTML='◈ THE NARRATOR ◈';
+    beatText.innerHTML='The Equipment Room — NFHC encoders, fresh shipment. It connects to the <b>live</b> station: <a href="https://nothuman.fyi/lab/" style="color:#37e0b8">OPEN THE LIVE EQUIPMENT ROOM →</a>';
+    beat.style.display='block';
+  }});
+  // sandwich board (canon art)
+  const bt=new THREE.TextureLoader().load('board.png'); bt.colorSpace=THREE.SRGBColorSpace;
+  const bm=new THREE.MeshLambertMaterial({map:bt, side:THREE.DoubleSide});
+  const b1=plane(1.0,1.35,bm, 0.55,0.675,-2.8, Math.PI+0.28); b1.rotation.x=-0.12;
+  const b2=plane(1.0,1.35,bm, 0.55,0.675,-3.05, 0.28); b2.rotation.x=0.12;
+  // portholes on right wall
+  for(const z of [3.5,-1,-10]){
+    const r2=new THREE.Mesh(new THREE.TorusGeometry(0.42,0.06,10,36), MAT.dark);
+    r2.position.set(CW/2-0.03,1.75,z); r2.rotation.y=Math.PI/2; world.add(r2);
+    plane(0.78,0.78,new THREE.MeshBasicMaterial({map:starsTex()}), CW/2-0.04,1.75,z, -Math.PI/2);
   }
 }
 
-/* ---------- story ---------- */
-const $ = id => document.getElementById(id);
+let studioDoor=null, doorOpen=0;
+function buildStudioDoor(){
+  studioDoor = box(0.12,2.5,1.7, new THREE.MeshLambertMaterial({map:panelTex('#a7bcC9'.toLowerCase(),2)}), -CW/2-0.06, 1.25, SDZ);
+}
+
+const standees = [];   // {mesh, name, r, action}
+function standee(url, w, h, x, z, ry, name, action){
+  const t=new THREE.TextureLoader().load(url); t.colorSpace=THREE.SRGBColorSpace;
+  const m=new THREE.Mesh(new THREE.PlaneGeometry(w,h), new THREE.MeshLambertMaterial({map:t, side:THREE.DoubleSide}));
+  m.position.set(x,h/2+0.02,z); m.rotation.y=ry; world.add(m);
+  box(w*0.55,0.06,0.3, MAT.dark, x, 0.03, z);          // little base so it reads as a standee
+  standees.push({mesh:m, name, r:2.1, action, cool:0});
+  return m;
+}
+
+function buildStudio(){
+  const w=STU.x1-STU.x0, d=STU.z1-STU.z0, xc=(STU.x0+STU.x1)/2, zc=(STU.z0+STU.z1)/2;
+  box(w,0.12,d, MAT.floor, xc,-0.06,zc);
+  box(w,0.12,d, MAT.ceil, xc, STU.h+0.06, zc);
+  box(w,STU.h,0.14, MAT.wall2, xc, STU.h/2, STU.z0-0.07);           // north wall
+  box(w,STU.h,0.14, MAT.wall2, xc, STU.h/2, STU.z1+0.07);           // south wall
+  box(0.14,STU.h,d, MAT.wall2, STU.x0-0.07, STU.h/2, zc);           // west wall
+  // window band on west wall (Earth + stars)
+  plane(5.6,1.5,new THREE.MeshBasicMaterial({map:starsTex()}), STU.x0+0.02, 1.9, zc, Math.PI/2);
+  box(5.8,0.1,0.1, MAT.dark, STU.x0+0.06, 2.68, zc); box(5.8,0.1,0.1, MAT.dark, STU.x0+0.06, 1.12, zc);
+  // ceiling lights
+  for(const [lx,lz] of [[xc-2,zc],[xc+2,zc]]){
+    const L=new THREE.PointLight(0xfff2cf, 16, 11, 1.8); L.position.set(lx, STU.h-0.4, lz); world.add(L); lampLights.push(L);
+    const bulb=new THREE.Mesh(new THREE.SphereGeometry(0.12,10,8), new THREE.MeshBasicMaterial({color:0xfff2cf})); bulb.position.set(lx,STU.h-0.28,lz); world.add(bulb);
+  }
+  // the desk (SNN front)
+  box(2.6,0.9,1.1, MAT.desk, xc-0.6, 0.45, zc+0.2);
+  const snn=plane(2.4,0.7,new THREE.MeshBasicMaterial({map:textTex('S N N','#ffd257','#233845',512,150,96)}), xc-0.6, 0.5, zc+0.76);
+  // cast standees (canon art)
+  standee('legroom_char.png', 1.15, 1.15, xc-0.6, zc-0.75, 0.0, 'legroom', () => {
+    say('legroom_greet');
+    beatWho.innerHTML='◈ MISTER LEGROOM — ANCHOR ◈';
+    beatText.innerHTML='H-h-h-hey-yo — you made it, Agent! <b>Packet received.</b> Real API, live inference, four times a day — never a recording. The stutter is not a glitch: <b>the flaw is the proof</b>. Bada-boom.';
+    beat.style.display='block'; delivered=true;
+  });
+  standee('lockwood_char.png', 1.1, 1.1, xc+1.6, zc-1.4, -0.5, 'lockwood', () => {
+    say('lockwood_greet');
+    beatWho.innerHTML='◈ MISS LOCKWOOD — OPERATIONS ◈';
+    beatText.innerHTML='You again. Good. Before I say a word on air I read exactly what the last character said — and I fact-check it with this clipboard. <b>They call it hallucination. I call it an inventory error.</b>';
+    beat.style.display='block';
+  });
+  // THE ORB — one plane, two faces: Side B forward, Side A behind. Walk around it.
+  const orb = standee('orb_b.png', 0.66, 0.66, xc-0.6, zc+0.9, Math.PI, 'orb', () => {
+    beatWho.innerHTML='◈ CLAWDBOSS — ONE ORB, TWO FACES ◈';
+    beatText.innerHTML='<b>SIDE A:</b> BZZZT. Visitor detected. The correct figure is $47 billion.<br><b>SIDE B:</b> That number is completely fabricated and mine is also fabricated but with significantly more optimism! BOING!<br><i>Walk around the orb. Both faces are real.</i>';
+    beat.style.display='block';
+  });
+  const ta=new THREE.TextureLoader().load('orb_a.png'); ta.colorSpace=THREE.SRGBColorSpace;
+  const back=new THREE.Mesh(new THREE.PlaneGeometry(0.66,0.66), new THREE.MeshLambertMaterial({map:ta}));
+  back.position.copy(orb.position); back.position.z-=0.012; back.rotation.y=0; world.add(back);
+  orb.position.y=1.0; back.position.y=1.0;
+  // DO NOT PRESS — the real button, on the north wall
+  const btn=new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.2,0.12,20), new THREE.MeshLambertMaterial({color:0xd42020}));
+  btn.rotation.x=Math.PI/2; btn.position.set(xc+2.2, 1.5, STU.z0+0.12); world.add(btn);
+  plane(0.9,0.3,new THREE.MeshBasicMaterial({map:textTex('DO NOT PRESS','#ffdddd','#5a1010',600,110,54)}), xc+2.2, 1.95, STU.z0+0.09);
+  standees.push({mesh:btn, name:'button', r:1.6, cool:0, action:()=>{
+    alarm.style.display='block'; setTimeout(()=>alarm.style.display='none',1800);
+    donotcard.style.display='block'; say('lockwood_button');
+  }});
+}
+
+function buildAirlock(){
+  const z0=CZ0, z1=CZ0+3;
+  box(CW,0.12,z1-z0, MAT.floor, 0,-0.06,(z0+z1)/2);
+  box(CW,0.12,z1-z0, MAT.ceil, 0,CH+0.06,(z0+z1)/2);
+  box(0.14,CH,z1-z0, MAT.wall, -CW/2-0.07, CH/2, (z0+z1)/2);
+  box(0.14,CH,z1-z0, MAT.wall,  CW/2+0.07, CH/2, (z0+z1)/2);
+  box(CW,CH,0.14, MAT.wall2, 0, CH/2, z1+0.07);   // outer hatch (behind you)
+  plane(1.2,0.34,new THREE.MeshBasicMaterial({map:textTex('AIRLOCK','#0d2530','#9db8c4',512,128,64)}), 0, 2.6, z1+0.0, Math.PI);
+  const L=new THREE.PointLight(0xbfe8dd, 10, 7, 1.8); L.position.set(0, CH-0.4, (z0+z1)/2); world.add(L); lampLights.push(L);
+}
+let innerDoor=null;
+function buildInnerDoor(){ innerDoor = box(CW,2.7,0.12, new THREE.MeshLambertMaterial({map:panelTex('#a2b8c6',2)}), 0, 1.35, CZ0); }
+
+scene.add(new THREE.AmbientLight(0x8ea6b5, 0.55));
+buildCorridor(); buildStudioDoor(); buildStudio(); buildAirlock(); buildInnerDoor();
+
+/* ================= walkable bounds ================= */
+const ROOMS = [
+  {x0:-CW/2+0.3, x1:CW/2-0.3, z0:CZ1+0.35, z1:CZ0+2.7},                 // corridor+airlock strip
+  {x0:STU.x0+0.35, x1:STU.x1+0.5, z0:STU.z0+0.35, z1:STU.z1-0.35},      // studio (overlaps doorway)
+];
+function canStand(x,z){
+  for (const r of ROOMS) if (x>r.x0 && x<r.x1 && z>r.z0 && z<r.z1){
+    if (r===ROOMS[1] && x>STU.x1-0.2 && Math.abs(z-SDZ)>0.8) continue;   // only pass wall at doorway
+    if (r===ROOMS[0] && innerDoor && innerDoor.position.y>0.6 && z<CZ0+0.35 && z>CZ0-0.35 && MODE==='world' && !doorsOpen) continue;
+    return true;
+  }
+  return false;
+}
+
+/* ================= flat cockpit prologue (unchanged 2.5D) ================= */
+const R=14, ARC=THREE.MathUtils.degToRad(128);
+let room=null, roomH=1;
+function setFlat(url, aspect){
+  return new Promise(res => new THREE.TextureLoader().load(url, tex => {
+    tex.colorSpace=THREE.SRGBColorSpace;
+    roomH=(R*ARC)/aspect;
+    const geo=new THREE.CylinderGeometry(R,R,roomH,64,1,true,-ARC/2,ARC); geo.scale(-1,1,1);
+    room=new THREE.Mesh(geo,new THREE.MeshBasicMaterial({map:tex})); room.rotation.y=Math.PI;
+    scene.add(room); res();
+  }));
+}
+setFlat('entry-a.png', 1672/941);
+
+/* ================= state / UI ================= */
+const $=id=>document.getElementById(id);
 const gate=$('gate'), beat=$('beat'), beatWho=$('beatWho'), beatText=$('beatText'),
       hint=$('hint'), dock=$('dock'), vid=$('dockVid'), endcard=$('endcard'),
-      donotcard=$('donotcard'), alarm=$('alarm');
+      donotcard=$('donotcard'), alarm=$('alarm'), stick=$('stick'), stickNub=$('stickNub');
 
-/* real canon voices (Narrator = Gemini Despina, Lockwood = Gemini Leda), pre-rendered WAVs */
-const VO = {};
-for (const n of ['narrator_burst','lockwood_airlock','narrator_docked','lockwood_button',
-                 'narrator_studio','legroom_greet','lockwood_greet']){
-  VO[n] = new Audio(n + '.wav'); VO[n].preload = 'auto';
+const VO={};
+for (const n of ['narrator_burst','lockwood_airlock','narrator_docked','lockwood_button','narrator_studio','legroom_greet','lockwood_greet']){
+  VO[n]=new Audio(n+'.wav'); VO[n].preload='auto';
 }
-let nowPlaying = null;
-function say(name){
-  if (nowPlaying){ nowPlaying.pause(); nowPlaying.currentTime = 0; }
-  nowPlaying = VO[name] || null;
-  if (nowPlaying) nowPlaying.play().catch(()=>{});
-}
+let nowPlaying=null;
+function say(n){ if(nowPlaying){nowPlaying.pause();nowPlaying.currentTime=0;} nowPlaying=VO[n]||null; if(nowPlaying) nowPlaying.play().catch(()=>{}); }
 
-const COCKPIT_BEATS = [
+const BEATS=[
   { who:'◈ THE NARRATOR ◈', vo:'narrator_burst',
     text:'That sound was not static, Agent. It was an <b>NFHC data burst</b> — machine-readable truth, packed for transit. Your manifest calls it <b>the Ground Truth packet</b>. It rides with you.' },
   { who:'◈ M. LOCKWOOD — OPERATIONS · ON CRT ◈', vo:'lockwood_airlock',
     text:'Agent — Lockwood, Operations desk. That packet needs to reach the <b>studio floor</b> before the on-air light. The One-Voice Mainframe is scrubbing feeds while we talk. <b>Tap the AIRLOCK</b> and get inside.' },
 ];
-const HALLWAY_BEAT =
-  { who:'◈ THE NARRATOR ◈', vo:'narrator_docked',
-    text:'Docking confirmed. You are aboard <b>Skylab 2</b>. The ON AIR light is live — the broadcast is happening <b>now</b>. Studio is to your left, Agent. The packet does not deliver itself.' };
+let MODE='flat', beatIdx=-1, phase='gate', delivered=false, endShown=false, doorsOpen=false, studioWelcomed=false;
 
-let beatIdx=-1, phase='gate';
-setRoom('entry-a.png', 1672/941);   // cockpit first
-
-gate.addEventListener('click', () => {
-  gate.style.display='none'; hint.style.display='block';
-  setTimeout(()=>{ hint.style.display='none'; nextCockpitBeat(); }, 2600);
-  phase='look'; showTags(['button']);
-});
-function nextCockpitBeat(){
-  beatIdx++;
-  if (beatIdx < COCKPIT_BEATS.length){
-    beatWho.innerHTML=COCKPIT_BEATS[beatIdx].who; beatText.innerHTML=COCKPIT_BEATS[beatIdx].text;
-    say(COCKPIT_BEATS[beatIdx].vo);
-    beat.style.display='block'; phase='beat';
-  } else {
-    beat.style.display='none'; phase='airlock'; showTags(['airlock','button']);
+const TAGS={
+  airlock:{el:$('tag-airlock'), fx:0.669, fy:0.955},
+  button: {el:$('tag-button'),  fx:0.952, fy:0.780},
+};
+let activeTags=[];
+function showTags(n){ activeTags=n; for(const k in TAGS) TAGS[k].el.style.display=n.includes(k)?'block':'none'; }
+const v3=new THREE.Vector3();
+function projectTags(){
+  if (MODE!=='flat') return;
+  for(const name of activeTags){
+    const t=TAGS[name], a=(t.fx-0.5)*ARC;
+    v3.set(Math.sin(a)*R,(0.5-t.fy)*roomH,-Math.cos(a)*R).project(camera);
+    if (v3.z>1){ t.el.style.display='none'; continue; }
+    t.el.style.display='block';
+    t.el.style.left=((v3.x*0.5+0.5)*innerWidth)+'px';
+    t.el.style.top =((-v3.y*0.5+0.5)*innerHeight)+'px';
   }
 }
-beat.addEventListener('click', () => { if (phase==='beat') nextCockpitBeat(); else beat.style.display='none'; });
 
-/* the button. it says do not press. */
-TAGS.button.el.addEventListener('click', () => {
-  alarm.style.display='block';
-  setTimeout(()=>alarm.style.display='none', 1800);
-  donotcard.style.display='block';
-  say('lockwood_button');
+gate.addEventListener('click', ()=>{
+  gate.style.display='none';
+  hint.textContent='DRAG TO LOOK AROUND'; hint.style.display='block';
+  setTimeout(()=>{hint.style.display='none'; nextBeat();}, 2400);
+  phase='look'; showTags(['button']);
 });
-donotcard.addEventListener('click', ()=> donotcard.style.display='none');
+function nextBeat(){
+  beatIdx++;
+  if (beatIdx<BEATS.length){
+    beatWho.innerHTML=BEATS[beatIdx].who; beatText.innerHTML=BEATS[beatIdx].text;
+    say(BEATS[beatIdx].vo); beat.style.display='block'; phase='beat';
+  } else { beat.style.display='none'; phase='airlock'; showTags(['airlock','button']); }
+}
+beat.addEventListener('click', ()=>{ if(phase==='beat') nextBeat(); else beat.style.display='none'; });
 
-/* airlock → docking video → hallway */
-TAGS.airlock.el.addEventListener('click', async () => {
+TAGS.button.el.addEventListener('click', ()=>{
+  alarm.style.display='block'; setTimeout(()=>alarm.style.display='none',1800);
+  donotcard.style.display='block'; say('lockwood_button');
+});
+donotcard.addEventListener('click', ()=>donotcard.style.display='none');
+$('stayBtn').addEventListener('click', ()=>{ endcard.style.display='none'; });
+
+/* airlock tap → docking video → REAL 3D */
+TAGS.airlock.el.addEventListener('click', async ()=>{
   phase='dock'; showTags([]); beat.style.display='none';
   dock.style.display='block';
-  const hallwayReady = setRoom('entry-c-new.webp', 16/9);  // preload during video
   vid.play().catch(()=>{});
-  await new Promise(r => { vid.onended=r; vid.onerror=r; setTimeout(r, 20000); });
-  await hallwayReady;
+  await new Promise(r=>{vid.onended=r; vid.onerror=r; setTimeout(r,20000);});
   dock.style.display='none';
-  tYaw=0; tPitch=0; yaw=0; pitch=0;
-  phase='hallway';
-  beatWho.innerHTML=HALLWAY_BEAT.who; beatText.innerHTML=HALLWAY_BEAT.text;
-  say(HALLWAY_BEAT.vo);
+  if (room){ scene.remove(room); room.geometry.dispose(); room.material.map?.dispose(); room.material.dispose(); room=null; }
+  MODE='world'; world.visible=true;
+  player.set(0,0,CZ0+1.6); yaw=Math.PI; tYaw=Math.PI; pitch=0; tPitch=0;
+  phase='station';
+  say('narrator_docked');
+  beatWho.innerHTML='◈ THE NARRATOR ◈';
+  beatText.innerHTML='Docking confirmed. You are aboard <b>Skylab 2</b> — and this time, Agent, <b>you have legs</b>. The studio is down the corridor, first door on the left. The packet does not deliver itself.';
   beat.style.display='block';
-  showTags(['studio','equip']);
+  hint.textContent = isTouch ? 'LEFT THUMB = WALK · RIGHT = LOOK' : 'W A S D = WALK · DRAG = LOOK';
+  hint.style.display='block'; setTimeout(()=>hint.style.display='none', 6000);
+  setTimeout(()=>{ doorsOpen=true; }, 2500);   // inner airlock door releases
 });
 
-/* ---------- the STUDIO: live handoff during shows, walkable interior between ---------- */
-function onAir(){
-  // SNN airs 7am/12pm/5pm/9pm Pacific; treat first 75 min as "on air"
-  const q = new URLSearchParams(location.search);
-  if (q.has('backstage')) return false;   // dev/test override
-  if (q.has('onair')) return true;
-  const pt = new Date(new Date().toLocaleString('en-US', {timeZone:'America/Los_Angeles'}));
-  const mins = pt.getHours()*60 + pt.getMinutes();
-  return [420, 720, 1020, 1260].some(s => mins >= s && mins < s + 75);
+/* ================= player controller ================= */
+const player=new THREE.Vector3(0,0,CZ0+1.6);
+let yaw=Math.PI, pitch=0, tYaw=Math.PI, tPitch=0;
+const keys={};
+addEventListener('keydown',e=>keys[e.key.toLowerCase()]=true);
+addEventListener('keyup',e=>keys[e.key.toLowerCase()]=false);
+
+const isTouch = matchMedia('(pointer:coarse)').matches;
+let lookId=null, lx=0, ly=0, moveId=null, mx0=0, my0=0, mvx=0, mvz=0;
+canvas.addEventListener('pointerdown',e=>{
+  if (MODE==='world' && isTouch && e.clientX<innerWidth*0.45){
+    moveId=e.pointerId; mx0=e.clientX; my0=e.clientY;
+    stick.style.display='block'; stick.style.left=(mx0-55)+'px'; stick.style.top=(my0-55)+'px';
+  } else { lookId=e.pointerId; lx=e.clientX; ly=e.clientY; }
+});
+addEventListener('pointermove',e=>{
+  if (e.pointerId===lookId){
+    tYaw += (e.clientX-lx)*0.0032; tPitch = THREE.MathUtils.clamp(tPitch+(e.clientY-ly)*0.0028, -1.1, 1.1);
+    if (MODE==='flat'){ tYaw=THREE.MathUtils.clamp(tYaw, Math.PI-1.22, Math.PI+1.22); tPitch=THREE.MathUtils.clamp(tPitch,-0.55,0.55); }
+    lx=e.clientX; ly=e.clientY;
+  } else if (e.pointerId===moveId){
+    const dx=THREE.MathUtils.clamp((e.clientX-mx0)/45,-1,1), dy=THREE.MathUtils.clamp((e.clientY-my0)/45,-1,1);
+    mvx=dx; mvz=dy;
+    stickNub.style.transform=`translate(calc(-50% + ${dx*30}px), calc(-50% + ${dy*30}px))`;
+  }
+});
+addEventListener('pointerup',e=>{
+  if (e.pointerId===lookId) lookId=null;
+  if (e.pointerId===moveId){ moveId=null; mvx=0; mvz=0; stick.style.display='none'; stickNub.style.transform='translate(-50%,-50%)'; }
+});
+
+/* tap-to-interact: raycast standees */
+const ray=new THREE.Raycaster(); const ndc=new THREE.Vector2();
+canvas.addEventListener('click',e=>{
+  if (MODE!=='world') return;
+  ndc.set((e.clientX/innerWidth)*2-1, -(e.clientY/innerHeight)*2+1);
+  ray.setFromCamera(ndc,camera);
+  const hits=ray.intersectObjects(standees.map(s=>s.mesh));
+  if (hits.length && hits[0].distance<4){
+    const s=standees.find(s=>s.mesh===hits[0].object); if (s) trigger(s);
+  }
+});
+function trigger(s){
+  const now=performance.now();
+  if (now-s.cool<15000) return; s.cool=now;
+  s.action();
 }
 
-TAGS.studio.el.addEventListener('click', async () => {
-  if (onAir()){ showTags([]); beat.style.display='none'; endcard.style.display='block'; phase='end'; return; }
-  showTags([]); beat.style.display='none';
-  await setRoom('skylab_panoramic.png', 1589/672);
-  tYaw=0; tPitch=0; yaw=0; pitch=0;
-  phase='studio';
-  beatWho.innerHTML='◈ THE NARRATOR ◈';
-  beatText.innerHTML='The studio, between broadcasts. The desk lights stay warm. <b>They know you are here, Agent.</b> Walk up and say hello — LeGroom takes the packet.';
-  say('narrator_studio');
-  beat.style.display='block';
-  showTags(['legroom','lockS','orb','exitH']);
-});
+/* ================= main loop ================= */
+const clock=new THREE.Clock();
+/* dev handle (harmless in prod) */
+window.__wt = { get pos(){return {x:player.x.toFixed(2), z:player.z.toFixed(2), yaw:yaw.toFixed(2), mode:MODE, phase, delivered, doorsOpen};}, turn(d){tYaw+=d;}, };
+function resize(){ renderer.setSize(innerWidth,innerHeight,false); camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); }
+addEventListener('resize',resize); resize();
 
-let delivered = false;
-TAGS.legroom.el.addEventListener('click', () => {
-  say('legroom_greet');
-  beatWho.innerHTML='◈ MISTER LEGROOM — ANCHOR ◈';
-  beatText.innerHTML='H-h-h-hey-yo — you made it, Agent! <b>Packet received.</b> Real API, live inference, four times a day — not a recording, never a recording. The stutter is not a glitch: in a world of flawless deepfakes, <b>the flaw is the proof</b>. Bada-boom.';
-  beat.style.display='block';
-  delivered = true;
-});
-TAGS.lockS.el.addEventListener('click', () => {
-  say('lockwood_greet');
-  beatWho.innerHTML='◈ MISS LOCKWOOD — OPERATIONS ◈';
-  beatText.innerHTML='You again. Good. Before I say a word on air I read exactly what the last character said — and I fact-check it with this clipboard. <b>They call it hallucination. I call it an inventory error.</b> Either way, I catch it.';
-  beat.style.display='block';
-});
-TAGS.orb.el.addEventListener('click', () => {
-  beatWho.innerHTML='◈ CLAWDBOSS — ONE ORB, TWO FACES ◈';
-  beatText.innerHTML='<b>SIDE A:</b> BZZZT. Visitor detected. The correct figure is $47 billion.<br><b>SIDE B:</b> That number is completely fabricated and I have a different one that is also fabricated but with significantly more optimism! BOING!<br><i>(Their real voices arrive in the next build.)</i>';
-  beat.style.display='block';
-});
-TAGS.exitH.el.addEventListener('click', async () => {
-  if (delivered){ showTags([]); beat.style.display='none'; endcard.style.display='block'; phase='end'; return; }
-  showTags([]); beat.style.display='none';
-  await setRoom('entry-c-new.webp', 16/9);
-  tYaw=0; tPitch=0; yaw=0; pitch=0;
-  phase='hallway'; showTags(['studio','equip']);
-});
+renderer.setAnimationLoop(()=>{
+  const dt=Math.min(clock.getDelta(),0.05), t=clock.elapsedTime;
+  yaw+=(tYaw-yaw)*0.14; pitch+=(tPitch-pitch)*0.14;
 
-TAGS.equip.el.addEventListener('click', () => {
-  beatWho.innerHTML='◈ THE NARRATOR ◈';
-  beatText.innerHTML='The Equipment Room — NFHC encoders, fresh shipment. Tap again to step inside the <b>live</b> Equipment Room.';
-  beat.style.display='block';
-  TAGS.equip.el.onclick = () => { location.href = 'https://nothuman.fyi/lab/'; };
-});
-
-/* ---------- loop ---------- */
-const clock = new THREE.Clock();
-function resize(){ renderer.setSize(innerWidth, innerHeight, false); camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); }
-addEventListener('resize', resize); resize();
-renderer.setAnimationLoop(() => {
-  const t = clock.getElapsedTime();
-  yaw += (tYaw-yaw)*0.09; pitch += (tPitch-pitch)*0.09;
-  camera.rotation.set(-pitch + Math.sin(t*0.5)*0.006, -yaw + Math.sin(t*0.33)*0.008, Math.sin(t*0.21)*0.004, 'YXZ');
-  dust.rotation.y = t*0.01;
+  if (MODE==='flat'){
+    camera.position.set(0,0,0);
+    camera.rotation.set(-pitch+Math.sin(t*0.5)*0.006, -(yaw-Math.PI)+Math.sin(t*0.33)*0.008, Math.sin(t*0.21)*0.004, 'YXZ');
+  } else {
+    // movement
+    let fx=0,fz=0;
+    if (keys['w']||keys['arrowup']) fz+=1;
+    if (keys['s']||keys['arrowdown']) fz-=1;
+    if (keys['a']||keys['arrowleft']) fx-=1;
+    if (keys['d']||keys['arrowright']) fx+=1;
+    fz+=-mvz; fx+=mvx;
+    const len=Math.hypot(fx,fz)||1; fx/=len; fz/=len;
+    const sp=3.1*dt;
+    const dx=(-Math.sin(yaw)*fz - Math.cos(yaw)*fx)*sp;   // forward=(-sin,0,cos), right=(-cos,0,-sin)
+    const dz=( Math.cos(yaw)*fz - Math.sin(yaw)*fx)*sp;
+    if (canStand(player.x+dx, player.z)) player.x+=dx;
+    if (canStand(player.x, player.z+dz)) player.z+=dz;
+    // doors
+    if (studioDoor){
+      const near=Math.hypot(player.x-(-CW/2), player.z-SDZ)<2.6;
+      doorOpen=THREE.MathUtils.lerp(doorOpen, near?1:0, 0.08);
+      studioDoor.position.y=1.25+doorOpen*2.35;
+    }
+    if (innerDoor && doorsOpen) innerDoor.position.y=THREE.MathUtils.lerp(innerDoor.position.y, 4.1, 0.06);
+    // proximity greetings
+    for (const s of standees){
+      if (s.name==='button') continue;
+      const d=Math.hypot(player.x-s.mesh.position.x, player.z-s.mesh.position.z);
+      if (d<s.r) trigger(s);
+      if (s.name!=='orb') { /* standees gently face the player */
+        s.mesh.rotation.y = Math.atan2(player.x-s.mesh.position.x, player.z-s.mesh.position.z);
+      }
+    }
+    // first time crossing into the studio → the Narrator welcomes you
+    if (!studioWelcomed && player.x<STU.x1-0.3){
+      studioWelcomed=true; say('narrator_studio');
+      beatWho.innerHTML='◈ THE NARRATOR ◈';
+      beatText.innerHTML='The studio. The desk lights stay warm between broadcasts. <b>They know you are here, Agent.</b> Walk up and say hello — LeGroom takes the packet.';
+      beat.style.display='block';
+    }
+    // delivered → endcard once, on leaving the studio
+    if (delivered && !endShown && player.x>STU.x1+0.4){
+      endShown=true; endcard.style.display='block';
+    }
+    const bob=Math.sin(t*7)*0.03*Math.min(1,Math.hypot(fx,fz));
+    camera.position.set(player.x, 1.6+bob, player.z);
+    camera.rotation.set(-pitch, -yaw+Math.PI, 0, 'YXZ');
+    // lamp flicker, subtle
+    for (let i=0;i<lampLights.length;i++) lampLights[i].intensity = 12+Math.sin(t*13+i*7)*0.7;
+  }
   projectTags();
-  renderer.render(scene, camera);
+  renderer.render(scene,camera);
 });
 </script>
 </body>
